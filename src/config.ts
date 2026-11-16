@@ -8,9 +8,18 @@ export interface Config {
   adminKey: string;
   zone: { lat: number; lng: number; radiusM: number };
   lockMode: 'off' | 'on';
+  block2Enabled: boolean;
+  openRadiusM: number;
+  openAccuracyCapM: number;
+  bboxMaxPageSize: number;
+  wsTicketTtlSeconds: number;
+  wsMaxConnectionsPerUser: number;
+  wsMessagesPer10s: number;
+  simulatorEnabled: boolean;
+  simulatorIntervalSeconds: number;
   enableSimulation: boolean;
   reportHideThreshold: number;
-  rateLimit: { read: number; write: number; auth: number };
+  rateLimit: { read: number; write: number; auth: number; open: number };
   seedOnEmpty: boolean;
   commit: string | null;
   logRequests: boolean;
@@ -45,6 +54,16 @@ const envSchema = z.object({
   ),
   ZONE_RADIUS_M: int(3000),
   LOCK_MODE: z.preprocess(emptyToUndefined, z.enum(['off', 'on']).default('off')),
+  BLOCK2_ENABLED: bool(false),
+  OPEN_RADIUS_M: int(50),
+  OPEN_ACCURACY_CAP_M: int(50, 0),
+  RATE_LIMIT_OPEN_PER_MIN: int(30),
+  BBOX_MAX_PAGE_SIZE: int(200),
+  WS_TICKET_TTL_SECONDS: int(30),
+  WS_MAX_CONNECTIONS_PER_USER: int(5),
+  WS_MESSAGES_PER_10S: int(20),
+  SIMULATOR_ENABLED: bool(false),
+  SIMULATOR_INTERVAL_SECONDS: int(20),
   ENABLE_SIMULATION: bool(true),
   REPORT_HIDE_THRESHOLD: int(3),
   RATE_LIMIT_READ_PER_MIN: int(600),
@@ -60,6 +79,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error(`Configuration invalide :\n${lines.join('\n')}`);
   }
   const e = parsed.data;
+  if (e.LOCK_MODE === 'on' && !e.BLOCK2_ENABLED) {
+    throw new Error('Configuration invalide :\n  - LOCK_MODE : refusé quand BLOCK2_ENABLED vaut false');
+  }
   const [lat, lng] = e.ZONE_CENTER.split(',').map((n) => Number(n.trim())) as [number, number];
   const commit = env.COMMIT_SHA ?? env.RAILWAY_GIT_COMMIT_SHA ?? env.SOURCE_VERSION ?? null;
   return {
@@ -70,12 +92,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     adminKey: e.ADMIN_KEY,
     zone: { lat, lng, radiusM: e.ZONE_RADIUS_M },
     lockMode: e.LOCK_MODE,
+    block2Enabled: e.BLOCK2_ENABLED,
+    openRadiusM: e.OPEN_RADIUS_M,
+    openAccuracyCapM: e.OPEN_ACCURACY_CAP_M,
+    bboxMaxPageSize: e.BBOX_MAX_PAGE_SIZE,
+    wsTicketTtlSeconds: e.WS_TICKET_TTL_SECONDS,
+    wsMaxConnectionsPerUser: e.WS_MAX_CONNECTIONS_PER_USER,
+    wsMessagesPer10s: e.WS_MESSAGES_PER_10S,
+    simulatorEnabled: e.SIMULATOR_ENABLED,
+    simulatorIntervalSeconds: e.SIMULATOR_INTERVAL_SECONDS,
     enableSimulation: e.ENABLE_SIMULATION,
     reportHideThreshold: e.REPORT_HIDE_THRESHOLD,
     rateLimit: {
       read: e.RATE_LIMIT_READ_PER_MIN,
       write: e.RATE_LIMIT_WRITE_PER_MIN,
       auth: e.RATE_LIMIT_AUTH_PER_MIN,
+      open: e.RATE_LIMIT_OPEN_PER_MIN,
     },
     seedOnEmpty: e.SEED_ON_EMPTY,
     commit: commit ? commit.slice(0, 7) : null,

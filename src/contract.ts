@@ -1,4 +1,5 @@
-import { type AnyRoute } from './http/route.js';
+import { type AnyRoute, type DocFlags, isDocumented } from './http/route.js';
+import { WS_TYPES } from './openapi/block2-text.js';
 import { errorStatusesOf } from './openapi/registry.js';
 import { VERSION } from './version.js';
 
@@ -37,7 +38,28 @@ const ACCESS_LABEL = {
   author_or_admin: 'token|admin',
 } as const;
 
-export function buildContract(routes: AnyRoute[]): string {
+const BLOCK2_SECTION = `
+## Bloc 2
+
+Tout est additif : rien du bloc 1 ne change. \`Drop.distanceM?: number\` n'existe que si la requête utilise \`near\`. Les erreurs peuvent porter \`error.meta?: object\`.
+Nouveaux codes : 403 too_far, 403 drop_locked, 409 block2_disabled.
+
+### Temps réel
+
+1. Côté serveur Next : \`POST /realtime/ticket\` (JWT) → \`{ ticket, expiresAt, url }\`. Ticket à usage unique, 30 s. Le JWT ne passe jamais dans l'URL du WebSocket.
+2. Navigateur : ouvrir \`url\` (\`/ws?ticket=wst_…\`). Ticket absent, expiré ou déjà utilisé : HTTP 401 au format d'erreur, pendant le handshake.
+3. Messages JSON \`{ type, data }\`. Message illisible ou inconnu : message \`error\`, sans fermeture.
+4. Fermetures serveur : 4001 session_expired · 4002 block2_disabled · 4008 rate_limited (20 messages / 10 s) · 4009 too_many_connections (5 max, la plus ancienne est fermée) · 4010 server_restart · 4011 admin_disconnect.
+5. Chaque Drop et Comment diffusé est construit pour son destinataire (isMine, likedByMe, verrouillage). Drops masqués : diffusés à leur auteur seulement, les autres reçoivent drop:deleted.
+6. Notifications : à l'auteur du drop uniquement, jamais pour ses propres actions. Aucune position d'utilisateur ne transite par le WebSocket.
+
+\`\`\`ts
+\${WS_TYPES}
+\`\`\`
+`;
+
+export function buildContract(allRoutes: AnyRoute[], flags: DocFlags = { block2: false }): string {
+  const routes = allRoutes.filter((r) => isDocumented(r, flags));
   const lines = routes.map((r) => {
     const ok = Object.keys(r.responses).join(',');
     const err = errorStatusesOf(r).join(',');
@@ -83,5 +105,5 @@ Erreurs de coordonnées (type, bornes, zone de 3 km autour du département MMI) 
   \`fail=422\` met « Erreur simulée sur ce champ. » sous chaque champ du corps. \`fail=429\` ajoute \`Retry-After: 5\`.
 - \`POST /auth/login?ttl=<secondes>\` (10 à 28800) : token de courte durée.
 - Comptes de démo : \`demo\` / \`drops2026\` (autres prénoms : même mot de passe).
-`;
+${flags.block2 ? BLOCK2_SECTION : ''}`;
 }

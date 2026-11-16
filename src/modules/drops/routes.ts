@@ -113,7 +113,7 @@ export function dropWriteRoutes(config: Config) {
           .run(user!.id, body.title, body.content, body.category, body.imageUrl ?? null, body.lat, body.lng, now, now);
         const id = Number(info.lastInsertRowid);
         const drop = toDrop(findDropRow(db, id, user!.id)!, user!.id);
-        events.emit('drop:created', drop);
+        events.emit('drop:created', drop, db);
         return { status: 201, headers: { Location: `/drops/${id}` }, body: drop };
       },
     }),
@@ -151,7 +151,7 @@ export function dropWriteRoutes(config: Config) {
            WHERE id = ?`,
         ).run(next.title, next.content, next.category, next.imageUrl, next.lat, next.lng, nowIso(), params.id);
         const drop = toDrop(findDropRow(db, params.id, user!.id)!, user!.id);
-        events.emit('drop:updated', drop);
+        events.emit('drop:updated', drop, db);
         return { body: drop };
       },
     }),
@@ -176,7 +176,7 @@ export function dropWriteRoutes(config: Config) {
       handler: ({ params, db, user }) => {
         const drop = toDrop(findDropRow(db, params.id, user?.id ?? null)!, user?.id ?? null);
         db.prepare('DELETE FROM drops WHERE id = ?').run(params.id);
-        events.emit('drop:deleted', drop);
+        events.emit('drop:deleted', drop, db);
         return { status: 204 };
       },
     }),

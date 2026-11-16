@@ -1,8 +1,12 @@
 import { type ResetMode, resetDatabase } from '../../db/seed.js';
+import { events } from '../../events.js';
+import type { Settings } from '../../settings.js';
+import type { SimulatorControl } from '../../simulator.js';
 import { notFound } from '../../errors.js';
 import { defineRoute } from '../../http/route.js';
 import { z } from '../../openapi/zod.js';
 import { DropSchema, EXAMPLES, PublicUserSchema, idParams } from '../../schemas.js';
+import { ApiError } from '../../errors.js';
 import { type DropRow, findDropRow, toDrop } from '../drops/repo.js';
 import { toPublicUser } from '../users/repo.js';
 
@@ -32,9 +36,45 @@ const ReportedDropSchema = z
   })
   .openapi('ReportedDrop');
 
+const simulatorBody = z
+  .object({
+    enabled: z.boolean(),
+    intervalSeconds: z.number().int().min(1, 'Entre 1 et 3600.').max(3600, 'Entre 1 et 3600.').optional(),
+  })
+  .strict();
+
 const adminDrop = (row: DropRow) => ({ ...toDrop(row, null), hidden: row.hidden === 1 });
 
-export function adminRoutes() {
+const SettingsSchema = z
+  .object({
+    block2Enabled: z.boolean(),
+    lockMode: z.enum(['on', 'off']),
+    simulator: z.object({ enabled: z.boolean(), intervalSeconds: z.number().int() }),
+  })
+  .openapi('AdminSettings');
+
+const settingsPatchBody = z
+  .object({
+    block2Enabled: z.boolean().optional(),
+    lockMode: z.enum(['on', 'off'], { errorMap: () => ({ message: 'Doit valoir "on" ou "off".' }) }).optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, { message: 'Renseignez au moins un réglage.' });
+
+const RealtimeStatsSchema = z
+  .object({
+    connections: z.number().int(),
+    byUser: z.array(z.object({ user: PublicUserSchema, connections: z.number().int() })),
+    viewers: z.array(z.object({ dropId: z.number().int(), count: z.number().int() })),
+  })
+  .openapi('AdminRealtime');
+
+export function adminRoutes({ simulator }: { simulator: SimulatorControl }) {
+  const settingsView = (settings: Settings) => ({
+    block2Enabled: settings.block2Enabled(),
+    lockMode: settings.lockMode(),
+    simulator: simulator.state(),
+  });
   return [
     defineRoute({
       method: 'post',
@@ -124,7 +164,117 @@ export function adminRoutes() {
           db.prepare('UPDATE drops SET hidden = 0 WHERE id = ?').run(params.id);
           db.prepare('DELETE FROM reports WHERE drop_id = ?').run(params.id);
         })();
-        return { body: toDrop(findDropRow(db, params.id, null)!, null) };
+        const drop = toDrop(findDropRow(db, params.id, null)!, null);
+        events.emit('drop:updated', drop, db);
+        return { body: drop };
+      },
+    }),
+    defineRoute({
+      method: 'get',
+      path: '/admin/settings',
+      tags: ['Admin (enseignant)'],
+      documentedOnlyWithBlock2: true,
+      summary: 'Lire les réglages à chaud',
+      description:
+        "Réglages modifiables sans redéploiement : `block2Enabled`, `lockMode` et l'état du simulateur. Une valeur stockée prime sur la variable d'environnement.",
+      access: 'admin',
+      rate: 'none',
+      responses: {
+        200: {
+          description: 'Réglages courants.',
+          schema: SettingsSchema,
+          example: { block2Enabled: false, lockMode: 'off', simulator: { enabled: false, intervalSeconds: 20 } },
+        },
+      },
+      handler: ({ settings }) => ({ body: settingsView(settings) }),
+    }),
+    defineRoute({
+      method: 'patch',
+      path: '/admin/settings',
+      tags: ['Admin (enseignant)'],
+      documentedOnlyWithBlock2: true,
+      summary: 'Modifier les réglages à chaud',
+      description:
+        "`block2Enabled` active ou coupe le bloc 2 (les WebSocket ouverts sont fermés avec le code 4002 à la désactivation, et `lockMode` repasse à `off`). `lockMode: \"on\"` avec le bloc 2 désactivé renvoie 409 `block2_disabled`. Un changement de `lockMode` émet `settings:updated` à tous les clients connectés.",
+      access: 'admin',
+      rate: 'none',
+      body: settingsPatchBody,
+      errors: [409],
+      responses: {
+        200: {
+          description: 'Réglages après modification.',
+          schema: SettingsSchema,
+          example: { block2Enabled: true, lockMode: 'on', simulator: { enabled: false, intervalSeconds: 20 } },
+        },
+      },
+      handler: ({ body, settings }) => {
+        settings.update(body);
+        return { body: settingsView(settings) };
+      },
+    }),
+    defineRoute({
+      method: 'get',
+      path: '/admin/realtime',
+      tags: ['Admin (enseignant)'],
+      block2: true,
+      summary: 'Connexions temps réel',
+      description:
+        "Nombre de connexions WebSocket, connexions par utilisateur (trié par nombre décroissant : une application qui ouvre une socket à chaque rendu se repère ici) et lecteurs par drop.",
+      access: 'admin',
+      rate: 'none',
+      responses: {
+        200: {
+          description: 'État du temps réel.',
+          schema: RealtimeStatsSchema,
+          example: {
+            connections: 23,
+            byUser: [{ user: EXAMPLES.publicUser, connections: 4 }],
+            viewers: [{ dropId: 42, count: 2 }],
+          },
+        },
+      },
+      handler: ({ realtime }) => ({ body: realtime.stats() }),
+    }),
+    defineRoute({
+      method: 'post',
+      path: '/admin/realtime/disconnect-all',
+      tags: ['Admin (enseignant)'],
+      block2: true,
+      summary: 'Déconnecter tout le monde',
+      description:
+        "Ferme toutes les connexions WebSocket avec le code 4011 (`admin_disconnect`), pour tester la reconnexion des applications.",
+      access: 'admin',
+      rate: 'none',
+      responses: {
+        200: {
+          description: 'Nombre de connexions fermées.',
+          schema: z.object({ disconnected: z.number().int() }),
+          example: { disconnected: 23 },
+        },
+      },
+      handler: ({ realtime }) => ({ body: { disconnected: realtime.disconnectAll() } }),
+    }),
+    defineRoute({
+      method: 'post',
+      path: '/admin/simulator',
+      tags: ['Admin (enseignant)'],
+      block2: true,
+      summary: 'Démarrer ou arrêter le simulateur',
+      description:
+        "Le simulateur agit au nom d'utilisateurs d'exemple (likes, commentaires, ouvertures, créations de drops) pour qu'un élève qui travaille seul voie des événements en direct. Tout ce qu'il crée disparaît avec `POST /admin/reset`.",
+      access: 'admin',
+      rate: 'none',
+      body: simulatorBody,
+      responses: {
+        200: {
+          description: 'État du simulateur.',
+          schema: z.object({ enabled: z.boolean(), intervalSeconds: z.number().int() }),
+          example: { enabled: true, intervalSeconds: 20 },
+        },
+      },
+      handler: ({ body }) => {
+        simulator.configure(body.enabled, body.intervalSeconds);
+        return { body: simulator.state() };
       },
     }),
   ];

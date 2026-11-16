@@ -4,8 +4,13 @@ import helmet from 'helmet';
 import swaggerUiDist from 'swagger-ui-dist';
 import type { Config } from './config.js';
 import { buildContract } from './contract.js';
+import { type RealtimeOptions, createRealtime } from './realtime/hub.js';
+import { createSettings } from './settings.js';
+import { createSimulator } from './simulator.js';
+import { realtimeRoutes } from './modules/realtime/routes.js';
+import { ApiError } from './errors.js';
 import type { Db } from './db/index.js';
-import { type AnyRoute, mountRoutes, rateClassOf } from './http/route.js';
+import { type AnyRoute, type DocFlags, mountRoutes, rateClassOf } from './http/route.js';
 import { authorOrAdmin, identify, requireAdmin, requireAuth } from './middleware/auth.js';
 import { createRateLimiters } from './middleware/rateLimit.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
@@ -25,9 +30,10 @@ import { buildDocument } from './openapi/registry.js';
 export interface AppDeps {
   config: Config;
   db: Db;
+  options?: { realtime?: RealtimeOptions };
 }
 
-export function createApp({ config, db }: AppDeps) {
+export function createApp({ config, db, options = {} }: AppDeps) {
   const app = express();
   app.set('trust proxy', 1);
   app.set('etag', false);
@@ -62,14 +68,23 @@ export function createApp({ config, db }: AppDeps) {
   app.use(simulation(config));
   app.use(identify(config, db));
 
+  const settings = createSettings(db, config);
+  const realtime = createRealtime(config, db, settings, options.realtime);
+  const simulator = createSimulator(config);
+  const flags = (): DocFlags => ({ block2: settings.block2Enabled() });
+
   const routes: AnyRoute[] = [];
   let documentCache: object | null = null;
   let contractCache: string | null = null;
+  settings.onChange(() => {
+    documentCache = null;
+    contractCache = null;
+  });
   routes.push(
     ...systemRoutes({
       config,
-      getDocument: () => (documentCache ??= buildDocument(routes)),
-      getContract: () => (contractCache ??= buildContract(routes)),
+      getDocument: () => (documentCache ??= buildDocument(routes, flags())),
+      getContract: () => (contractCache ??= buildContract(routes, flags())),
     }),
   );
 
@@ -82,12 +97,16 @@ export function createApp({ config, db }: AppDeps) {
     ...commentReadRoutes(),
     ...commentWriteRoutes(),
     ...reportRoutes(),
-    ...adminRoutes(),
+    ...adminRoutes({ simulator }),
+    ...realtimeRoutes(),
   );
 
   const limiters = createRateLimiters(config);
   const pre = (spec: AnyRoute): RequestHandler[] => {
     const chain: RequestHandler[] = [];
+    if (spec.block2) {
+      chain.push((_req, _res, next) => (settings.block2Enabled() ? next() : next(ApiError.of(404))));
+    }
     if (spec.access === 'admin') chain.push(requireAdmin(config));
     if (spec.access === 'auth') chain.push(requireAuth);
     if (spec.access === 'author_or_admin') chain.push(authorOrAdmin(config));
@@ -96,12 +115,23 @@ export function createApp({ config, db }: AppDeps) {
     return chain;
   };
 
+  const deps = { config, db, settings, realtime, pre };
   const router = express.Router();
-  mountRoutes(router, routes, { config, db, pre });
+  mountRoutes(router, routes.filter((r) => !r.block2 && !r.documentedOnlyWithBlock2), deps);
+  const alwaysRouter = express.Router();
+  mountRoutes(alwaysRouter, routes.filter((r) => r.documentedOnlyWithBlock2), deps);
+  const block2Router = express.Router();
+  mountRoutes(block2Router, routes.filter((r) => r.block2), deps);
   app.use('/docs/assets', express.static(swaggerUiDist.getAbsoluteFSPath(), { index: false }));
   app.use(router);
+  app.use(alwaysRouter);
+  app.use((req, res, next) => (settings.block2Enabled() ? block2Router(req, res, next) : next()));
   app.locals.apiRouter = router;
+  app.locals.block2Routers = [alwaysRouter, block2Router];
   app.locals.routes = routes;
+  app.locals.realtime = realtime;
+  app.locals.settings = settings;
+  app.locals.simulator = simulator;
 
   app.use(notFoundHandler);
   app.use(errorHandler);

@@ -35,16 +35,27 @@ const SELECT_DROP = `
   FROM drops d
   JOIN users u ON u.id = d.author_id`;
 
-export function toDrop(row: DropRow, viewerId: number | null) {
+export const approximate = (value: number): number => Math.round(value * 1000) / 1000;
+
+export function isLockedFor(row: DropRow, viewerId: number | null, lockMode: 'on' | 'off'): boolean {
+  if (lockMode !== 'on') return false;
+  if (viewerId === null) return true;
+  return row.author_id !== viewerId && row.opened_by_me !== 1;
+}
+
+export function toDrop(row: DropRow, viewerId: number | null, lockMode: 'on' | 'off' = 'off') {
   const isMine = viewerId !== null && row.author_id === viewerId;
+  const locked = isLockedFor(row, viewerId, lockMode);
   return {
     id: row.id,
     title: row.title,
-    content: row.content as string | null,
+    content: (locked ? null : row.content) as string | null,
     category: row.category,
-    imageUrl: row.image_url,
-    location: { lat: row.lat, lng: row.lng, precision: 'exact' as 'exact' | 'approx' },
-    locked: false,
+    imageUrl: locked ? null : row.image_url,
+    location: locked
+      ? { lat: approximate(row.lat), lng: approximate(row.lng), precision: 'approx' as 'exact' | 'approx' }
+      : { lat: row.lat, lng: row.lng, precision: 'exact' as 'exact' | 'approx' },
+    locked,
     hidden: isMine && row.hidden === 1,
     author: toPublicUser({ id: row.author_id, username: row.username, display_name: row.display_name, avatar_url: row.avatar_url }),
     likesCount: row.likes_count,

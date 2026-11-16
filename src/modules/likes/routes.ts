@@ -30,7 +30,7 @@ export function likeRoutes() {
           .run(params.id, user!.id, new Date().toISOString());
         const likesCount = countLikes(db, params.id);
         if (info.changes > 0) {
-          events.emit('like:updated', { dropId: params.id, userId: user!.id, liked: true, likesCount });
+          events.emit('like:updated', { dropId: params.id, userId: user!.id, liked: true, likesCount }, db);
         }
         return { body: { liked: true, likesCount } };
       },
@@ -51,7 +51,7 @@ export function likeRoutes() {
         const info = db.prepare('DELETE FROM likes WHERE drop_id = ? AND user_id = ?').run(params.id, user!.id);
         const likesCount = countLikes(db, params.id);
         if (info.changes > 0) {
-          events.emit('like:updated', { dropId: params.id, userId: user!.id, liked: false, likesCount });
+          events.emit('like:updated', { dropId: params.id, userId: user!.id, liked: false, likesCount }, db);
         }
         return { body: { liked: false, likesCount } };
       },

@@ -67,3 +67,22 @@ Une ligne par choix non couvert par la spécification.
 - Les événements du bus (`drop:created`, `drop:updated`, `drop:deleted`, `like:updated`, `comment:created`) sont émis après chaque mutation réussie ; `like:updated` seulement quand l'état change. Aucun événement pour la suppression d'un commentaire (non prévu par la spec).
 - Script de fumée : l'utilisateur créé reste en base (pas d'endpoint de suppression de compte) ; un `POST /admin/reset` avec `keep-users` ou `all` s'en charge. Le script est aussi testé contre l'app dans `npm test`.
 - Docker n'était pas disponible sur la machine de développement : l'image n'a pas été construite localement, seul le build TypeScript et le démarrage de `dist/server.js` ont été vérifiés.
+
+## P3 (bloc 2, branche `v2`)
+
+- La spec nomme la branche `block2` ; le travail est fait sur `v2`, sur demande explicite de l'enseignant. Rien n'est poussé sur `main`.
+- Contradiction de la spec : `/admin/settings` devrait être « toujours documentée » (section 9) alors que l'OpenAPI doit rester strictement identique à la référence quand le bloc 2 est désactivé (section 1). Le test de contrat gagne : la route fonctionne toujours, mais elle n'apparaît dans `/openapi.json` qu'une fois le bloc 2 activé. Son usage est documenté dans le README.
+- Le test de bloc 1 « chaque route Express figure dans /openapi.json » parcourt `app.locals.apiRouter`. Les routes du bloc 2 vivent donc dans deux autres routeurs (`app.locals.block2Routers`) : l'un toujours actif (`/admin/settings`), l'autre derrière un interrupteur qui laisse tomber dans le 404 standard quand le bloc 2 est désactivé. Aucun test du bloc 1 n'a été modifié.
+- Les réglages (`block2Enabled`, `lockMode`) sont lus en base au démarrage puis tenus en mémoire (une seule instance). Une valeur stockée prime sur la variable d'environnement. Écrire un réglage fige les deux valeurs en base.
+- `lockMode` effectif : toujours `off` tant que le bloc 2 est désactivé. Désactiver le bloc 2 remet `lockMode` à `off` en base. `LOCK_MODE=on` avec `BLOCK2_ENABLED=false` empêche le démarrage (« refusé si le bloc 2 est désactivé »).
+- Le bus d'événements transmet la base d'origine en second argument (`events.emit(nom, payload, db)`), pour qu'un hub ne traite que les événements de sa propre base. Les payloads du bloc 1 sont inchangés. Deux événements ajoutés : `comment:deleted` et `drop:opened`. Le déverrouillage d'un drop (`/admin/drops/:id/unhide`) émet désormais `drop:updated`.
+- Le hub WebSocket relit le drop en base pour **chaque destinataire** à chaque événement (même sérialisation que `GET /drops/:id`), sans jamais réutiliser l'objet de l'émetteur.
+- Un drop qui passe en `hidden` est diffusé comme `drop:updated` à son auteur, et comme `drop:deleted` aux autres (pour qu'ils le retirent de leur liste). Quand il est réactivé, tout le monde reçoit `drop:updated`.
+- Raison de fermeture WebSocket : l'identifiant de la colonne « Raison » de la spec (`session_expired`, `block2_disabled`…), pour que le client puisse l'aiguiller sans parser du texte.
+- `presence:view` sur un drop inexistant ou masqué : message `error` avec `code: "not_found"` (la spec ne prévoit que `bad_message`).
+- Handshake refusé : 401 `invalid_token` pour un ticket absent, expiré ou déjà utilisé ; 401 `token_expired` / `token_revoked` si le JWT d'origine ne vaut plus ; 404 `not_found` si le bloc 2 est désactivé ou si le chemin n'est pas `/ws`.
+- `POST /realtime/ticket` compte dans la limite de **lecture** (et non d'écriture) : une application qui se reconnecte souvent ne doit pas épuiser son quota d'écritures. L'URL du ticket commence par `wss://` derrière HTTPS (proxy compris), `ws://` en local.
+- Messages WebSocket limités à 8 ko ; au-delà, `ws` ferme la connexion.
+- Présence : un utilisateur connecté plusieurs fois n'apparaît qu'une fois dans `presence:online` et `viewers`.
+- Le simulateur n'a qu'un contrôleur d'état à ce stade (`POST /admin/simulator` et `GET /admin/settings` répondent) ; les actions simulées arrivent en P5.
+- Le contrat `contract.md` du bloc 1 est aussi gardé en référence (`tests/contract/contract-block1.md`) : désactivé, il doit être identique à l'octet près.

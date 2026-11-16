@@ -91,7 +91,7 @@ export function commentWriteRoutes() {
           .prepare('INSERT INTO comments (drop_id, author_id, content, created_at) VALUES (?, ?, ?, ?)')
           .run(params.id, user!.id, body.content, new Date().toISOString());
         const comment = toComment(findComment(db, Number(info.lastInsertRowid))!, user!.id);
-        events.emit('comment:created', comment);
+        events.emit('comment:created', comment, db);
         return { status: 201, body: comment };
       },
     }),
@@ -111,7 +111,9 @@ export function commentWriteRoutes() {
         if (comment.author_id !== user!.id) throw forbidden("Seul l'auteur peut supprimer ce commentaire.");
       },
       handler: ({ params, db }) => {
+        const comment = findComment(db, params.id)!;
         db.prepare('DELETE FROM comments WHERE id = ?').run(params.id);
+        events.emit('comment:deleted', { dropId: comment.drop_id, commentId: comment.id }, db);
         return { status: 204 };
       },
     }),

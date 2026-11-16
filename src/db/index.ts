@@ -66,6 +66,10 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
   jti TEXT PRIMARY KEY,
   expires_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `;
 
 export const foldText = (value: unknown): string =>

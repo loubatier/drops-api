@@ -3,6 +3,7 @@ import { createApp } from './app.js';
 import { loadConfig } from './config.js';
 import { scheduleBackups } from './db/backup.js';
 import { openDb } from './db/index.js';
+import type { Realtime } from './realtime/hub.js';
 import { seedIfEmpty } from './db/seed.js';
 
 function main() {
@@ -12,13 +13,18 @@ function main() {
   scheduleBackups(db, config.databasePath);
   const app = createApp({ config, db });
   const server = http.createServer(app);
+  const realtime = app.locals.realtime as Realtime;
+  realtime.attach(server);
   server.listen(config.port, () => {
     console.log(`Drops API en écoute sur le port ${config.port}`);
   });
   const shutdown = () => {
-    server.close(() => {
-      db.close();
-      process.exit(0);
+    void realtime.close().then(() => {
+      server.close(() => {
+        db.close();
+        process.exit(0);
+      });
+      server.closeIdleConnections();
     });
     setTimeout(() => process.exit(1), 5000).unref();
   };
