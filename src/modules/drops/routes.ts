@@ -2,6 +2,7 @@ import type { Config } from '../../config.js';
 import { resolveGeo } from './geo-query.js';
 import type { Db } from '../../db/index.js';
 import { events } from '../../events.js';
+import { createDrop } from '../../services.js';
 import { dropLocked, forbidden, notFound, tooFar, validationFailed } from '../../errors.js';
 import { haversineMeters } from '../../geo.js';
 import { type DocFlags, defineRoute } from '../../http/route.js';
@@ -178,17 +179,8 @@ export function dropWriteRoutes(config: Config) {
         },
       },
       handler: ({ body, db, user, settings }) => {
-        const now = nowIso();
-        const info = db
-          .prepare(
-            `INSERT INTO drops (author_id, title, content, category, image_url, lat, lng, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          )
-          .run(user!.id, body.title, body.content, body.category, body.imageUrl ?? null, body.lat, body.lng, now, now);
-        const id = Number(info.lastInsertRowid);
-        const drop = toDrop(findDropRow(db, id, user!.id)!, user!.id, settings.lockMode());
-        events.emit('drop:created', drop, db);
-        return { status: 201, headers: { Location: `/drops/${id}` }, body: drop };
+        const drop = createDrop(db, user!.id, body, settings.lockMode());
+        return { status: 201, headers: { Location: `/drops/${drop.id}` }, body: drop };
       },
     }),
     defineRoute({

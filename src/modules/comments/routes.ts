@@ -1,4 +1,5 @@
 import { events } from '../../events.js';
+import { addComment } from '../../services.js';
 import { forbidden, notFound } from '../../errors.js';
 import { z } from '../../openapi/zod.js';
 import { defineRoute } from '../../http/route.js';
@@ -87,14 +88,7 @@ export function commentWriteRoutes() {
       guard: ({ params, db, user, settings }) => {
         assertUnlocked(viewableDrop(db, params.id, user!.id), user!.id, settings.lockMode());
       },
-      handler: ({ params, body, db, user }) => {
-        const info = db
-          .prepare('INSERT INTO comments (drop_id, author_id, content, created_at) VALUES (?, ?, ?, ?)')
-          .run(params.id, user!.id, body.content, new Date().toISOString());
-        const comment = toComment(findComment(db, Number(info.lastInsertRowid))!, user!.id);
-        events.emit('comment:created', comment, db);
-        return { status: 201, body: comment };
-      },
+      handler: ({ params, body, db, user }) => ({ status: 201, body: addComment(db, params.id, user!.id, body.content) }),
     }),
     defineRoute({
       method: 'delete',

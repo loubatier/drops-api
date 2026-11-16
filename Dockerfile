@@ -14,5 +14,6 @@ ENV DATABASE_PATH=/data/drops.db
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY data/points.json ./data/points.json
 EXPOSE 4000
 CMD ["node", "dist/server.js"]

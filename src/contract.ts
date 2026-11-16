@@ -59,6 +59,11 @@ Nouveaux codes : 403 too_far, 403 drop_locked, 409 block2_disabled.
   position arrondie à 3 décimales, \`precision: 'approx'\`. Commentaires et likes : 403 drop_locked. \`q\` ne cherche que dans le titre et l'auteur.
   near, bbox et distanceM utilisent alors la position approchée. lockMode off : rien ne change. Le changement arrive en direct (\`settings:updated\`).
 
+### Jeu de données
+
+\`GET /dataset/points\` (public, gzip, cache 24 h, sans pagination) : \`{ source, count, points[] }\`, valeurs brutes (coordonnées parfois en chaîne ou \`null\`).
+\`?format=geojson\` : FeatureCollection \`[lng, lat]\` des seuls points valides, plus \`skipped\`.
+
 ### Temps réel
 
 1. Côté serveur Next : \`POST /realtime/ticket\` (JWT) → \`{ ticket, expiresAt, url }\`. Ticket à usage unique, 30 s. Le JWT ne passe jamais dans l'URL du WebSocket.

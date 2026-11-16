@@ -1,3 +1,4 @@
+import compression from 'compression';
 import cors from 'cors';
 import express, { type NextFunction, type Request, type RequestHandler, type Response } from 'express';
 import helmet from 'helmet';
@@ -20,6 +21,7 @@ import { simulation } from './middleware/simulation.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { adminRoutes } from './modules/admin/routes.js';
 import { commentReadRoutes, commentWriteRoutes } from './modules/comments/routes.js';
+import { datasetRoutes } from './modules/dataset/routes.js';
 import { dropGeoRoutes } from './modules/drops/open.js';
 import { dropReadRoutes, dropWriteRoutes } from './modules/drops/routes.js';
 import { likeRoutes } from './modules/likes/routes.js';
@@ -71,7 +73,7 @@ export function createApp({ config, db, options = {} }: AppDeps) {
 
   const settings = createSettings(db, config);
   const realtime = createRealtime(config, db, settings, options.realtime);
-  const simulator = createSimulator(config);
+  const simulator = createSimulator(config, db, settings);
   const flags = (): DocFlags => ({ block2: settings.block2Enabled() });
 
   const routes: AnyRoute[] = [];
@@ -101,6 +103,7 @@ export function createApp({ config, db, options = {} }: AppDeps) {
     ...adminRoutes({ simulator }),
     ...realtimeRoutes(),
     ...dropGeoRoutes(),
+    ...datasetRoutes(),
   );
 
   const limiters = createRateLimiters(config);
@@ -117,6 +120,7 @@ export function createApp({ config, db, options = {} }: AppDeps) {
     return chain;
   };
 
+  app.use('/dataset/points', compression());
   const deps = { config, db, settings, realtime, pre };
   const router = express.Router();
   mountRoutes(router, routes.filter((r) => !r.block2 && !r.documentedOnlyWithBlock2), deps);
