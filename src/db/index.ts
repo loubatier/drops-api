@@ -68,12 +68,20 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
 );
 `;
 
+export const foldText = (value: unknown): string =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
 export function openDb(path: string): Db {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const db = new Database(path);
   db.pragma('foreign_keys = ON');
   if (path !== ':memory:') db.pragma('journal_mode = WAL');
+  db.function('fold', { deterministic: true }, foldText);
   migrate(db);
+  db.prepare('DELETE FROM revoked_tokens WHERE expires_at < ?').run(Math.floor(Date.now() / 1000));
   return db;
 }
 

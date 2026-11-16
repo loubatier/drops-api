@@ -1,16 +1,22 @@
 import cors from 'cors';
-import express, { type NextFunction, type Request, type Response } from 'express';
+import express, { type NextFunction, type Request, type RequestHandler, type Response } from 'express';
 import helmet from 'helmet';
 import swaggerUiDist from 'swagger-ui-dist';
 import type { Config } from './config.js';
 import { buildContract } from './contract.js';
 import type { Db } from './db/index.js';
-import { type AnyRoute, mountRoutes } from './http/route.js';
+import { type AnyRoute, mountRoutes, rateClassOf } from './http/route.js';
+import { identify, requireAdmin, requireAuth } from './middleware/auth.js';
+import { createRateLimiters } from './middleware/rateLimit.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { requestLogger } from './middleware/logger.js';
 import { requestId } from './middleware/requestId.js';
 import { simulation } from './middleware/simulation.js';
+import { authRoutes } from './modules/auth/routes.js';
+import { commentReadRoutes } from './modules/comments/routes.js';
+import { dropReadRoutes } from './modules/drops/routes.js';
 import { systemRoutes } from './modules/health/routes.js';
+import { userRoutes } from './modules/users/routes.js';
 import { buildDocument } from './openapi/registry.js';
 
 export interface AppDeps {
@@ -51,6 +57,7 @@ export function createApp({ config, db }: AppDeps) {
   );
   app.use(express.json({ limit: '100kb' }));
   app.use(simulation(config));
+  app.use(identify(config, db));
 
   const routes: AnyRoute[] = [];
   let documentCache: object | null = null;
@@ -63,8 +70,20 @@ export function createApp({ config, db }: AppDeps) {
     }),
   );
 
+  routes.push(...authRoutes(config), ...userRoutes(), ...dropReadRoutes(), ...commentReadRoutes());
+
+  const limiters = createRateLimiters(config);
+  const pre = (spec: AnyRoute): RequestHandler[] => {
+    const chain: RequestHandler[] = [];
+    if (spec.access === 'admin') chain.push(requireAdmin(config));
+    if (spec.access === 'auth') chain.push(requireAuth);
+    const rate = rateClassOf(spec);
+    if (rate !== 'none') chain.push(limiters[rate]);
+    return chain;
+  };
+
   const router = express.Router();
-  mountRoutes(router, routes, { config, db, pre: () => [] });
+  mountRoutes(router, routes, { config, db, pre });
   app.use('/docs/assets', express.static(swaggerUiDist.getAbsoluteFSPath(), { index: false }));
   app.use(router);
   app.locals.apiRouter = router;

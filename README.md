@@ -31,6 +31,15 @@ L'API écoute sur http://localhost:4000 (`/docs`, `/health`, `/contract.md`).
 | `RATE_LIMIT_AUTH_PER_MIN` | `60` | Inscriptions et connexions par minute et par IP |
 | `SEED_ON_EMPTY` | `true` | Charge les données d'exemple si la base est vide |
 
+## Comptes de démo
+
+Au premier démarrage sur une base vide, l'API charge 12 utilisateurs fictifs (`lea`, `yanis`, `camille`, `hugo`, `ines`, `noe`, `manon`, `lucas`, `sarah`, `tom`, `jade`, `zoe`) et un compte `demo`. Tous ont le mot de passe `drops2026`. Les e-mails sont de la forme `<nom>@example.com`. `zoe` n'a aucun drop, et un drop n'a aucun commentaire, pour tester les états vides. Connecte-toi avec `demo` et un autre compte pour tester le 403.
+
+## Outils pour tester le front
+
+- `?delay=<ms>` et `?fail=<statut>` sur toutes les routes, `POST /auth/login?ttl=<secondes>` pour une session courte.
+- Le contrat résumé est servi sur `/contract.md`, à coller dans le fichier d'agent.
+
 ## Scripts
 
 `npm run dev` (rechargement à chaud), `npm run build`, `npm start`, `npm test`, `npm run seed`, `npm run smoke -- <url>`.
