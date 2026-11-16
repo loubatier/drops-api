@@ -9,7 +9,7 @@ Une ligne par choix non couvert par la spécification.
 - `/`, `/health`, `/docs`, `/openapi.json` et `/contract.md` figurent dans l'OpenAPI sous le tag « Santé ».
 - Un corps JSON de plus de 100 ko renvoie 400 `bad_request` (la spec ne liste pas de 413).
 - Un corps qui n'est pas un objet JSON (ou une valeur racine invalide) renvoie 422 avec la clé `body` dans `fields`.
-- Les erreurs de validation de requête sont vérifiées après l'authentification et avant le handler : un non-auteur qui envoie un PATCH invalide reçoit 422 plutôt que 403.
+- Ordre des contrôles : authentification, identifiant (404), existence et droits (404 puis 403), puis validation (422). Un non-auteur qui envoie un PATCH invalide reçoit donc 403, pas 422.
 - Les paramètres de chemin qui échouent à la validation (identifiant non numérique) renvoient 404 `not_found`.
 - Les paramètres de requête inconnus sont ignorés ; seuls les corps sont stricts.
 - `?delay` et `?fail` sont traités avant l'authentification et la limite de requêtes : une requête simulée ne consomme pas de quota.
@@ -47,3 +47,23 @@ Une ligne par choix non couvert par la spécification.
 - Reset `keep-users` (P2) conserve tous les comptes, y compris les comptes d'exemple, et remet à zéro les compteurs d'identifiants des drops et commentaires.
 - Sauvegarde : au démarrage puis toutes les heures, fichier `backups/drops-<horodatage>.db` à côté de la base, 24 copies conservées. Désactivée pour une base en mémoire.
 - `src/events.ts` expose un bus d'événements typé (aucun abonné au bloc 1).
+
+## P2
+
+- `DELETE /drops/{id}` accepte le token de l'auteur **ou** `X-Admin-Key`. Si `X-Admin-Key` est présent, il doit être correct (sinon 403), même si un token valide accompagne la requête. L'enseignant peut aussi supprimer un drop masqué.
+- `DELETE /comments/{id}` reste réservé à l'auteur du commentaire : la clé admin seule donne 401.
+- Liker, commenter ou signaler un drop masqué par d'autres renvoie 404 (le drop n'est pas visible pour eux) ; son auteur peut encore le liker, le commenter et le modifier.
+- Un seul signalement par utilisateur et par drop : un second signalement renvoie 202 sans rien changer (le motif initial est conservé).
+- Au seuil de signalements, le drop passe en `hidden` et l'événement `drop:updated` est émis.
+- `POST /admin/drops/{id}/unhide` remet `hidden` à 0 et supprime tous les signalements du drop.
+- `GET /admin/reports` renvoie un tableau (pas une page) de `{ drop, reports }`, le drop signalé le plus récemment en premier ; `hidden` y reflète l'état réel. Format libre dans la spec, choisi pour rester simple.
+- Reset `all` : les comptes d'exemple retrouvent les mêmes identifiants, donc leurs anciens tokens restent valides (même id et même nom) ; les comptes d'élèves disparaissent et leurs tokens renvoient 401 `invalid_token`. Le token doit correspondre à l'id **et** au nom d'utilisateur.
+- Reset : le JSON de réponse donne les effectifs après rechargement ; la confirmation exige exactement `"RESET"` et le mode est obligatoire.
+- Les routes admin ne sont pas limitées en débit (une seule clé, usage enseignant).
+- Création et modification : `imageUrl` accepte `null` ou l'absence pour les catégories autres que `photo` ; sur un PATCH, la règle « une photo a besoin d'une image » s'applique à l'état final (catégorie et image fusionnées avec l'existant).
+- Bornes de latitude et de longitude : messages dédiés, rangés sous `location` avec les erreurs de type et de zone. Si seule `lat` ou `lng` est envoyée dans un PATCH, l'erreur `location` demande de les envoyer ensemble.
+- Le message de zone calcule le rayon depuis `ZONE_RADIUS_M` (3000 m donne « 3 km »).
+- Un commentaire ou un titre est « trimmé » avant le contrôle de longueur ; un texte fait uniquement d'espaces est refusé.
+- Les événements du bus (`drop:created`, `drop:updated`, `drop:deleted`, `like:updated`, `comment:created`) sont émis après chaque mutation réussie ; `like:updated` seulement quand l'état change. Aucun événement pour la suppression d'un commentaire (non prévu par la spec).
+- Script de fumée : l'utilisateur créé reste en base (pas d'endpoint de suppression de compte) ; un `POST /admin/reset` avec `keep-users` ou `all` s'en charge. Le script est aussi testé contre l'app dans `npm test`.
+- Docker n'était pas disponible sur la machine de développement : l'image n'a pas été construite localement, seul le build TypeScript et le démarrage de `dist/server.js` ont été vérifiés.

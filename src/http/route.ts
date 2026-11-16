@@ -5,7 +5,7 @@ import type { Db } from '../db/index.js';
 import { notFound } from '../errors.js';
 import { validate } from '../validation.js';
 
-export type Access = 'public' | 'optional' | 'auth' | 'admin';
+export type Access = 'public' | 'optional' | 'auth' | 'admin' | 'author_or_admin';
 export type RateClass = 'read' | 'write' | 'auth' | 'none';
 export type Method = 'get' | 'post' | 'patch' | 'delete';
 
@@ -23,6 +23,7 @@ export interface Ctx<P = any, Q = any, B = any> {
   query: Q;
   body: B;
   user: AuthUser | null;
+  isAdmin: boolean;
   db: Db;
   config: Config;
 }
@@ -56,6 +57,7 @@ export interface RouteSpec<P extends ZodTypeAny, Q extends ZodTypeAny, B extends
   body?: B;
   responses: Record<number, ResponseSpec>;
   errors?: number[];
+  guard?: (ctx: Omit<Ctx<z.infer<P>>, 'query' | 'body'>) => void;
   handler: (ctx: Ctx<z.infer<P>, z.infer<Q>, z.infer<B>>) => Result | Promise<Result>;
 }
 
@@ -90,18 +92,19 @@ export function mountRoutes(router: Router, routes: AnyRoute[], deps: MountDeps)
           if (!parsed.success) throw notFound();
           params = parsed.data;
         }
-        const query = spec.query ? validate(spec.query, req.query) : req.query;
-        const body = spec.body ? validate(spec.body, req.body ?? {}, true) : undefined;
-        const result = await spec.handler({
+        const base = {
           req,
           res,
           params,
-          query,
-          body,
           user: res.locals.user ?? null,
+          isAdmin: res.locals.isAdmin === true,
           db: deps.db,
           config: deps.config,
-        });
+        };
+        spec.guard?.(base);
+        const query = spec.query ? validate(spec.query, req.query) : req.query;
+        const body = spec.body ? validate(spec.body, req.body ?? {}, true) : undefined;
+        const result = await spec.handler({ ...base, query, body });
         res.status(result.status ?? 200);
         for (const [k, v] of Object.entries(result.headers ?? {})) res.setHeader(k, v);
         if (result.raw !== undefined) {

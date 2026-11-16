@@ -6,15 +6,18 @@ import type { Config } from './config.js';
 import { buildContract } from './contract.js';
 import type { Db } from './db/index.js';
 import { type AnyRoute, mountRoutes, rateClassOf } from './http/route.js';
-import { identify, requireAdmin, requireAuth } from './middleware/auth.js';
+import { authorOrAdmin, identify, requireAdmin, requireAuth } from './middleware/auth.js';
 import { createRateLimiters } from './middleware/rateLimit.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { requestLogger } from './middleware/logger.js';
 import { requestId } from './middleware/requestId.js';
 import { simulation } from './middleware/simulation.js';
 import { authRoutes } from './modules/auth/routes.js';
-import { commentReadRoutes } from './modules/comments/routes.js';
-import { dropReadRoutes } from './modules/drops/routes.js';
+import { adminRoutes } from './modules/admin/routes.js';
+import { commentReadRoutes, commentWriteRoutes } from './modules/comments/routes.js';
+import { dropReadRoutes, dropWriteRoutes } from './modules/drops/routes.js';
+import { likeRoutes } from './modules/likes/routes.js';
+import { reportRoutes } from './modules/reports/routes.js';
 import { systemRoutes } from './modules/health/routes.js';
 import { userRoutes } from './modules/users/routes.js';
 import { buildDocument } from './openapi/registry.js';
@@ -70,13 +73,24 @@ export function createApp({ config, db }: AppDeps) {
     }),
   );
 
-  routes.push(...authRoutes(config), ...userRoutes(), ...dropReadRoutes(), ...commentReadRoutes());
+  routes.push(
+    ...authRoutes(config),
+    ...userRoutes(),
+    ...dropReadRoutes(),
+    ...dropWriteRoutes(config),
+    ...likeRoutes(),
+    ...commentReadRoutes(),
+    ...commentWriteRoutes(),
+    ...reportRoutes(),
+    ...adminRoutes(),
+  );
 
   const limiters = createRateLimiters(config);
   const pre = (spec: AnyRoute): RequestHandler[] => {
     const chain: RequestHandler[] = [];
     if (spec.access === 'admin') chain.push(requireAdmin(config));
     if (spec.access === 'auth') chain.push(requireAuth);
+    if (spec.access === 'author_or_admin') chain.push(authorOrAdmin(config));
     const rate = rateClassOf(spec);
     if (rate !== 'none') chain.push(limiters[rate]);
     return chain;

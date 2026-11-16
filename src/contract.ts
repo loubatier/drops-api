@@ -29,13 +29,19 @@ interface ApiError {
   };
 }`;
 
-const ACCESS_LABEL = { public: 'public', optional: 'token?', auth: 'token', admin: 'admin' } as const;
+const ACCESS_LABEL = {
+  public: 'public',
+  optional: 'token?',
+  auth: 'token',
+  admin: 'admin',
+  author_or_admin: 'token|admin',
+} as const;
 
 export function buildContract(routes: AnyRoute[]): string {
   const lines = routes.map((r) => {
     const ok = Object.keys(r.responses).join(',');
     const err = errorStatusesOf(r).join(',');
-    return `${r.method.toUpperCase().padEnd(6)} ${r.path.padEnd(28)} ${ACCESS_LABEL[r.access].padEnd(7)} ${ok} | ${err}`;
+    return `${r.method.toUpperCase().padEnd(6)} ${r.path.padEnd(28)} ${ACCESS_LABEL[r.access].padEnd(11)} ${ok} | ${err}`;
   });
   return `# Drops API : contrat v${VERSION}
 

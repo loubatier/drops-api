@@ -57,8 +57,8 @@ export function errorStatusesOf(spec: AnyRoute): number[] {
   }
   if (spec.query) s.add(422);
   if (spec.params) s.add(404);
-  if (spec.access === 'auth' || spec.access === 'optional') s.add(401);
-  if (spec.access === 'admin') s.add(403);
+  if (spec.access === 'auth' || spec.access === 'optional' || spec.access === 'author_or_admin') s.add(401);
+  if (spec.access === 'admin' || spec.access === 'author_or_admin') s.add(403);
   if (rateClassOf(spec) !== 'none') s.add(429);
   s.add(500);
   return [...s].filter((c) => !(c in spec.responses)).sort((a, b) => a - b);
@@ -128,7 +128,9 @@ export function buildDocument(routes: AnyRoute[]) {
           ? [{}, { bearerAuth: [] }]
           : spec.access === 'admin'
             ? [{ adminKey: [] }]
-            : [];
+            : spec.access === 'author_or_admin'
+              ? [{ bearerAuth: [] }, { adminKey: [] }]
+              : [];
 
     registry.registerPath({
       method: spec.method,
@@ -146,7 +148,16 @@ export function buildDocument(routes: AnyRoute[]) {
                 'X-Admin-Key': z.string().openapi({ description: "Clé de l'enseignant.", example: 'cle-enseignant' }),
               }),
             }
-          : {}),
+          : spec.access === 'author_or_admin'
+            ? {
+                headers: z.object({
+                  'X-Admin-Key': z
+                    .string()
+                    .optional()
+                    .openapi({ description: "Clé de l'enseignant, à la place du token.", example: 'cle-enseignant' }),
+                }),
+              }
+            : {}),
         ...(spec.body
           ? { body: { required: true, content: { 'application/json': { schema: spec.body } } } }
           : {}),

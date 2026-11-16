@@ -40,10 +40,34 @@ Au premier démarrage sur une base vide, l'API charge 12 utilisateurs fictifs (`
 - `?delay=<ms>` et `?fail=<statut>` sur toutes les routes, `POST /auth/login?ttl=<secondes>` pour une session courte.
 - Le contrat résumé est servi sur `/contract.md`, à coller dans le fichier d'agent.
 
+## Faire un reset
+
+Avec la clé de l'enseignant (`ADMIN_KEY`) :
+
+```bash
+curl -X POST https://<domaine>/admin/reset \
+  -H "X-Admin-Key: $ADMIN_KEY" -H "Content-Type: application/json" \
+  -d '{"confirm":"RESET","mode":"keep-users"}'
+```
+
+`mode: "all"` vide tout (comptes compris) et recharge les données d'exemple ; `"keep-users"` garde les comptes des élèves et remet les drops, likes, commentaires et signalements à l'état d'exemple. Les drops signalés se consultent avec `GET /admin/reports` et se réactivent avec `POST /admin/drops/{id}/unhide`.
+
 ## Scripts
 
 `npm run dev` (rechargement à chaud), `npm run build`, `npm start`, `npm test`, `npm run seed`, `npm run smoke -- <url>`.
 
 ## Déployer
 
-Voir `SPECS.md`, section 13 (Railway, volume monté sur `/data`, `/health` comme chemin de santé). L'image Docker s'appuie sur `node:22-bookworm-slim`.
+Exemple avec Railway (voir aussi `SPECS.md`, section 13) :
+
+1. Pousser le dépôt sur GitHub et créer un projet à partir du dépôt (le `Dockerfile` est détecté).
+2. Ajouter un volume monté sur `/data`.
+3. Définir `DATABASE_PATH=/data/drops.db`, `JWT_SECRET` (`openssl rand -base64 48`), `ADMIN_KEY`, puis les autres variables si besoin.
+4. Déclarer `/health` comme chemin de vérification de santé et générer un domaine public.
+5. Vérifier : `npm run smoke -- https://<domaine>` doit afficher uniquement des ✅.
+
+Une seule instance (SQLite, limites en mémoire). L'image s'appuie sur `node:22-bookworm-slim` et s'exécute en root pour pouvoir écrire sur le volume monté par Railway.
+
+## Documentation
+
+`/docs` (interface interactive), `/openapi.json` (OpenAPI 3.1, généré depuis le code), `/contract.md` (résumé pour les agents IA).

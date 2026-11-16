@@ -9,7 +9,7 @@ const invalid = (code: string, message: string) => ApiError.of(401, message, {},
 
 export function identify(config: Config, db: Db): RequestHandler {
   const isRevoked = db.prepare('SELECT 1 FROM revoked_tokens WHERE jti = ?');
-  const userExists = db.prepare('SELECT username FROM users WHERE id = ?');
+  const findUser = db.prepare('SELECT username FROM users WHERE id = ?');
   return (req: Request, res: Response, next: NextFunction) => {
     const header = req.headers.authorization;
     if (header === undefined) return next();
@@ -24,7 +24,8 @@ export function identify(config: Config, db: Db): RequestHandler {
     }
     if (isRevoked.get(claims.jti)) return next(invalid('token_revoked', 'Ce token a été révoqué.'));
     const id = Number(claims.sub);
-    if (!Number.isInteger(id) || !userExists.get(id)) return next(invalid('invalid_token', 'Token invalide.'));
+    const user = Number.isInteger(id) ? (findUser.get(id) as { username: string } | undefined) : undefined;
+    if (!user || user.username !== claims.username) return next(invalid('invalid_token', 'Token invalide.'));
     res.locals.user = { id, username: claims.username, jti: claims.jti, exp: claims.exp };
     next();
   };
@@ -44,5 +45,16 @@ export function requireAdmin(config: Config): RequestHandler {
     const key = typeof provided === 'string' ? provided : '';
     if (!timingSafeEqual(digest(key), expected)) return next(forbidden('Clé administrateur absente ou incorrecte.'));
     next();
+  };
+}
+
+export function authorOrAdmin(config: Config): RequestHandler {
+  const admin = requireAdmin(config);
+  return (req, res, next) => {
+    if (req.headers['x-admin-key'] === undefined) return requireAuth(req, res, next);
+    admin(req, res, (err?: unknown) => {
+      if (!err) res.locals.isAdmin = true;
+      next(err);
+    });
   };
 }
