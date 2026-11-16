@@ -44,6 +44,21 @@ const BLOCK2_SECTION = `
 Tout est additif : rien du bloc 1 ne change. \`Drop.distanceM?: number\` n'existe que si la requête utilise \`near\`. Les erreurs peuvent porter \`error.meta?: object\`.
 Nouveaux codes : 403 too_far, 403 drop_locked, 409 block2_disabled.
 
+### Géolocalisation (GET /drops)
+
+- \`near=lat,lng\` + \`radius\` (1 à 5000 m, défaut 1000) : drops dans le rayon, \`distanceM\` ajouté. \`sort=distance\` (défaut avec near) n'existe qu'avec near.
+- \`bbox=minLng,minLat,maxLng,maxLat\` : **longitude d'abord** (ordre GeoJSON, pas celui de Leaflet). \`pageSize\` jusqu'à 200 avec bbox.
+- near et bbox s'excluent (422 sur les deux) ; radius sans near : 422 sur radius. Se combinent avec q, category, author, page.
+
+### Ouverture et verrouillage
+
+- \`POST /drops/:id/open\` { lat, lng, accuracy? } : accepté à moins de 50 m + min(accuracy, 50). Sinon 403 too_far, \`meta: { distanceM, requiredM }\`.
+  La position envoyée n'est ni stockée, ni journalisée, ni diffusée. Elle est déclarée par le client : elle se simule dans les DevTools.
+- \`GET /drops/:id/opens\` : auteur seulement (403 sinon).
+- Avec lockMode on, un drop que l'on n'a ni écrit ni ouvert (et tout drop pour un visiteur) est verrouillé : \`locked: true\`, \`content\` et \`imageUrl\` \`null\`,
+  position arrondie à 3 décimales, \`precision: 'approx'\`. Commentaires et likes : 403 drop_locked. \`q\` ne cherche que dans le titre et l'auteur.
+  near, bbox et distanceM utilisent alors la position approchée. lockMode off : rien ne change. Le changement arrive en direct (\`settings:updated\`).
+
 ### Temps réel
 
 1. Côté serveur Next : \`POST /realtime/ticket\` (JWT) → \`{ ticket, expiresAt, url }\`. Ticket à usage unique, 30 s. Le JWT ne passe jamais dans l'URL du WebSocket.

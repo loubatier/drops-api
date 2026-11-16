@@ -20,6 +20,7 @@ import { simulation } from './middleware/simulation.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { adminRoutes } from './modules/admin/routes.js';
 import { commentReadRoutes, commentWriteRoutes } from './modules/comments/routes.js';
+import { dropGeoRoutes } from './modules/drops/open.js';
 import { dropReadRoutes, dropWriteRoutes } from './modules/drops/routes.js';
 import { likeRoutes } from './modules/likes/routes.js';
 import { reportRoutes } from './modules/reports/routes.js';
@@ -91,7 +92,7 @@ export function createApp({ config, db, options = {} }: AppDeps) {
   routes.push(
     ...authRoutes(config),
     ...userRoutes(),
-    ...dropReadRoutes(),
+    ...dropReadRoutes(config),
     ...dropWriteRoutes(config),
     ...likeRoutes(),
     ...commentReadRoutes(),
@@ -99,6 +100,7 @@ export function createApp({ config, db, options = {} }: AppDeps) {
     ...reportRoutes(),
     ...adminRoutes({ simulator }),
     ...realtimeRoutes(),
+    ...dropGeoRoutes(),
   );
 
   const limiters = createRateLimiters(config);

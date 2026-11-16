@@ -2,7 +2,7 @@ import { events } from '../../events.js';
 import { defineRoute } from '../../http/route.js';
 import { z } from '../../openapi/zod.js';
 import { idParams } from '../../schemas.js';
-import { viewableDrop } from '../drops/routes.js';
+import { assertUnlocked, viewableDrop } from '../drops/routes.js';
 import type { Db } from '../../db/index.js';
 
 const LikeSchema = z.object({ liked: z.boolean(), likesCount: z.number().int() }).openapi('LikeState');
@@ -21,8 +21,8 @@ export function likeRoutes() {
       access: 'auth',
       params: idParams,
       responses: { 200: { description: 'État du like.', schema: LikeSchema, example: { liked: true, likesCount: 5 } } },
-      guard: ({ params, db, user }) => {
-        viewableDrop(db, params.id, user!.id);
+      guard: ({ params, db, user, settings }) => {
+        assertUnlocked(viewableDrop(db, params.id, user!.id), user!.id, settings.lockMode());
       },
       handler: ({ params, db, user }) => {
         const info = db
@@ -44,8 +44,8 @@ export function likeRoutes() {
       access: 'auth',
       params: idParams,
       responses: { 200: { description: 'État du like.', schema: LikeSchema, example: { liked: false, likesCount: 4 } } },
-      guard: ({ params, db, user }) => {
-        viewableDrop(db, params.id, user!.id);
+      guard: ({ params, db, user, settings }) => {
+        assertUnlocked(viewableDrop(db, params.id, user!.id), user!.id, settings.lockMode());
       },
       handler: ({ params, db, user }) => {
         const info = db.prepare('DELETE FROM likes WHERE drop_id = ? AND user_id = ?').run(params.id, user!.id);

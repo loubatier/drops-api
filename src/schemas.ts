@@ -60,7 +60,7 @@ export const usernameParams = z.object({
   username: z.string().openapi({ description: "Nom d'utilisateur (minuscules).", example: 'lea' }),
 });
 
-const intQuery = (def: number, min: number, max?: number) => {
+export const intQuery = (def: number, min: number, max?: number) => {
   const message = max
     ? `Doit être un entier entre ${min} et ${max}.`
     : `Doit être un entier supérieur ou égal à ${min}.`;

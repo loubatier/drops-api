@@ -5,7 +5,7 @@ import { defineRoute } from '../../http/route.js';
 import { CommentSchema, EXAMPLES, idParams, pageExample, pageSchema, paginationQuery } from '../../schemas.js';
 import type { Db } from '../../db/index.js';
 import { findDropRow, isVisibleTo, paginate } from '../drops/repo.js';
-import { viewableDrop } from '../drops/routes.js';
+import { assertUnlocked, viewableDrop } from '../drops/routes.js';
 import { toPublicUser } from '../users/repo.js';
 
 export const CommentPageSchema = pageSchema(CommentSchema, 'CommentPage');
@@ -51,10 +51,11 @@ export function commentReadRoutes() {
       responses: {
         200: { description: 'Page de commentaires.', schema: CommentPageSchema, example: pageExample(EXAMPLES.comment, 2) },
       },
-      handler: ({ params, query, db, user }) => {
+      handler: ({ params, query, db, user, settings }) => {
         const viewerId = user?.id ?? null;
         const drop = findDropRow(db, params.id, viewerId);
         if (!drop || !isVisibleTo(drop, viewerId)) throw notFound('Drop introuvable.');
+        assertUnlocked(drop, viewerId, settings.lockMode());
         const total = (db.prepare('SELECT COUNT(*) AS n FROM comments WHERE drop_id = ?').get(params.id) as { n: number }).n;
         const rows = db
           .prepare(`${SELECT_COMMENT} WHERE c.drop_id = ? ORDER BY c.created_at ASC, c.id ASC LIMIT ? OFFSET ?`)
@@ -83,8 +84,8 @@ export function commentWriteRoutes() {
       responses: {
         201: { description: 'Commentaire créé.', schema: CommentSchema, example: { ...EXAMPLES.comment, isMine: true } },
       },
-      guard: ({ params, db, user }) => {
-        viewableDrop(db, params.id, user!.id);
+      guard: ({ params, db, user, settings }) => {
+        assertUnlocked(viewableDrop(db, params.id, user!.id), user!.id, settings.lockMode());
       },
       handler: ({ params, body, db, user }) => {
         const info = db

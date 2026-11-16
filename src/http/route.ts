@@ -8,7 +8,7 @@ import type { Settings } from '../settings.js';
 import { validate } from '../validation.js';
 
 export type Access = 'public' | 'optional' | 'auth' | 'admin' | 'author_or_admin';
-export type RateClass = 'read' | 'write' | 'auth' | 'none';
+export type RateClass = 'read' | 'write' | 'auth' | 'open' | 'none';
 export type Method = 'get' | 'post' | 'patch' | 'delete';
 
 export interface AuthUser {
@@ -60,6 +60,7 @@ export interface RouteSpec<P extends ZodTypeAny, Q extends ZodTypeAny, B extends
   documentedOnlyWithBlock2?: boolean;
   params?: P;
   query?: Q | ((flags: DocFlags) => Q);
+  refineQuery?: (query: z.infer<Q>, ctx: { req: Request; config: Config; settings: Settings }) => z.infer<Q>;
   body?: B;
   responses: Record<number, ResponseSpec>;
   errors?: number[];
@@ -126,7 +127,10 @@ export function mountRoutes(router: Router, routes: AnyRoute[], deps: MountDeps)
         };
         spec.guard?.(base);
         const querySchema = queryOf(spec, { block2: deps.settings.block2Enabled() });
-        const query = querySchema ? validate(querySchema, req.query) : req.query;
+        let query = querySchema ? validate(querySchema, req.query) : req.query;
+        if (querySchema && spec.refineQuery && deps.settings.block2Enabled()) {
+          query = spec.refineQuery(query, { req, config: deps.config, settings: deps.settings });
+        }
         const body = spec.body ? validate(spec.body, req.body ?? {}, true) : undefined;
         const result = await spec.handler({ ...base, query, body });
         res.status(result.status ?? 200);
