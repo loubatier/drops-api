@@ -2,10 +2,10 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { expect, it } from 'vitest';
 import { runSmoke } from '../scripts/smoke.js';
-import { buildSeededApp } from './helpers.js';
+import { buildProductionSeededApp } from './helpers.js';
 
 it('le script de fumée passe contre une instance locale', async () => {
-  const { app } = buildSeededApp();
+  const { app } = buildProductionSeededApp();
   const server = http.createServer(app);
   await new Promise<void>((resolve) => server.listen(0, resolve));
   const { port } = server.address() as AddressInfo;

@@ -27,6 +27,7 @@ export class ApiError extends Error {
     public fields: Fields = {},
     public headers: Record<string, string> = {},
     public simulated = false,
+    public meta?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -39,6 +40,9 @@ export class ApiError extends Error {
 
 export const notFound = (message = 'Ressource introuvable.') => ApiError.of(404, message);
 export const forbidden = (message?: string) => ApiError.of(403, message);
+export const tooFar = (message: string, meta: Record<string, unknown>) =>
+  new ApiError(403, 'too_far', message, {}, {}, false, meta);
+export const dropLocked = () => new ApiError(403, 'drop_locked', 'Ouvrez ce drop pour voir et réagir.');
 export const validationFailed = (fields: Fields, message?: string) => ApiError.of(422, message, fields);
 
 export function errorBody(err: ApiError, requestId: string) {
@@ -50,6 +54,7 @@ export function errorBody(err: ApiError, requestId: string) {
       fields: err.fields,
       requestId,
       simulated: err.simulated,
+      ...(err.meta ? { meta: err.meta } : {}),
     },
   };
 }

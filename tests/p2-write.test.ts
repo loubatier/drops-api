@@ -499,18 +499,19 @@ describe('administration', () => {
   it('reset all vide la base et recharge les données d’exemple', async () => {
     const ctx = await setup();
     const initial = (await ctx.api.post('/admin/reset').set(admin).send({ confirm: 'RESET', mode: 'all' })).body;
-    expect(initial).toMatchObject({ users: 13, drops: 60 });
+    expect(initial).toMatchObject({ users: 9, drops: 9, comments: 0, likes: 0 });
     const eleve = await registerUser(ctx.api, 'eleve');
     await createDrop(ctx, eleve.token);
     const res = await ctx.api.post('/admin/reset').set(admin).send({ confirm: 'RESET', mode: 'all' });
     expect(res.status).toBe(200);
     expect(res.body).toEqual(initial);
-    expect((await ctx.api.get('/users/eleve')).status).toBe(404);
+    const reader = bearer((await loginAs(ctx.api, 'mathis')).token);
+    expect((await ctx.api.get('/users/eleve').set(reader)).status).toBe(404);
     const stale = await ctx.api.get('/auth/me').set(bearer(eleve.token));
     expect(stale.status).toBe(401);
     expect(stale.body.error.code).toBe('invalid_token');
-    expect((await ctx.api.get('/auth/me').set(bearer(ctx.lea))).status).toBe(200);
-    expect((await loginAs(ctx.api, 'demo')).res.status).toBe(200);
+    expect((await ctx.api.get('/auth/me').set(bearer(ctx.lea))).status).toBe(401);
+    expect((await loginAs(ctx.api, 'mathis')).res.status).toBe(200);
   });
 
   it('reset keep-users garde les comptes des élèves et leurs identifiants', async () => {
@@ -523,12 +524,13 @@ describe('administration', () => {
     const res = await ctx.api.post('/admin/reset').set(admin).send({ confirm: 'RESET', mode: 'keep-users' });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ...before, users: before.users + 1 });
-    expect((await ctx.api.get('/users/eleve')).body.stats).toEqual({ dropsCount: 0, likesReceived: 0, commentsCount: 0 });
-    expect((await ctx.api.get(`/drops/${drop.id}`)).body.author?.username).not.toBe('eleve');
+    const reader = bearer((await loginAs(ctx.api, 'mathis')).token);
+    expect((await ctx.api.get('/users/eleve').set(reader)).body.stats).toEqual({ dropsCount: 0, likesReceived: 0, commentsCount: 0 });
+    expect((await ctx.api.get(`/drops/${drop.id}`).set(reader)).body.author?.username).not.toBe('eleve');
     expect((await ctx.api.get('/auth/me').set(bearer(eleve.token))).status).toBe(200);
     expect((await loginAs(ctx.api, 'eleve', 'motdepasse1')).res.status).toBe(200);
-    const ids = (await ctx.api.get('/drops?pageSize=50&sort=recent')).body.items.map((d: any) => d.id);
-    expect(Math.max(...ids)).toBe(60);
+    const ids = (await ctx.api.get('/drops?pageSize=50&sort=recent').set(reader)).body.items.map((d: any) => d.id);
+    expect(Math.max(...ids)).toBe(9);
   });
 
   it.each([

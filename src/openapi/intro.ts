@@ -1,3 +1,5 @@
+import { WS_PROTOCOL } from './block2-text.js';
+
 export const TAGS = [
   { name: 'Santé', description: "État du service et accès à la documentation." },
   { name: 'Auth', description: 'Inscription, connexion, session.' },
@@ -49,5 +51,17 @@ Codes : \`bad_request\` (400), \`unauthorized\`, \`invalid_token\`, \`token_expi
 - \`POST /auth/login?ttl=<secondes>\` (10 à la durée maximale) : token de courte durée pour tester l'expiration de session.
 
 ## Comptes de démo
-Tous les comptes d'exemple ont le mot de passe \`drops2026\`. Utilisez \`demo\` / \`drops2026\`, ou un autre prénom (par exemple \`lea\`), pour tester le 403 avec un deuxième compte.
+Tous les comptes d'exemple ont le mot de passe \`drops2026\`. Utilisez \`mathis\` / \`drops2026\`, ou un autre prénom (par exemple \`noah\`), pour tester le 403 avec un deuxième compte.
+`;
+
+export const BLOCK2_TAGS = [
+  { name: 'Temps réel', description: WS_PROTOCOL },
+  { name: 'Géolocalisation', description: 'Recherche géographique et ouverture des drops à proximité.' },
+  { name: 'Jeu de données', description: 'Jeu de données ouvert pour le travail dans un Web Worker.' },
+];
+
+export const BLOCK2_INTRO = `
+
+## Bloc 2
+Temps réel (WebSocket), recherche géographique, ouverture et verrouillage des drops, jeu de données. Tout est additif : rien du bloc 1 ne change. Nouveaux codes d'erreur : \`too_far\` (403), \`drop_locked\` (403), \`block2_disabled\` (409). Les erreurs peuvent porter un champ facultatif \`meta\`.
 `;

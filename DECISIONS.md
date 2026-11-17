@@ -32,7 +32,7 @@ Une ligne par choix non couvert par la spécification.
 - Inscription : l'identifiant et l'e-mail sont aussi comparés en minuscules ; un e-mail déjà pris renvoie 409 avec `fields.email`, les deux champs sont signalés ensemble si besoin.
 - `PATCH /auth/me` avec un corps vide renvoie 422 avec la clé `body`.
 - Profil : `dropsCount` et `likesReceived` ne comptent que les drops visibles ; `commentsCount` est le nombre de commentaires **écrits** par l'utilisateur.
-- `GET /users/{username}` est accessible avec ou sans token (token facultatif) ; `/users/me` et `/users/admin` renvoient 404 puisque ces noms sont réservés.
+- `GET /users/{username}` exige un token (voir « Accès » ci-dessous) ; `/users/me` et `/users/admin` renvoient 404 puisque ces noms sont réservés.
 - `GET /categories` figure sous le tag « Drops » ; `POST /auth/login` porte aussi le tag « Outils pédagogiques » à cause de `?ttl`.
 - Pagination : `totalPages` vaut 0 quand il n'y a aucun résultat.
 - `q` : un `q` vide ou fait d'espaces est ignoré ; `%` et `_` sont traités comme du texte ; la comparaison ignore casse et accents grâce à une fonction SQL `fold` (normalisation Unicode NFD).
@@ -67,3 +67,60 @@ Une ligne par choix non couvert par la spécification.
 - Les événements du bus (`drop:created`, `drop:updated`, `drop:deleted`, `like:updated`, `comment:created`) sont émis après chaque mutation réussie ; `like:updated` seulement quand l'état change. Aucun événement pour la suppression d'un commentaire (non prévu par la spec).
 - Script de fumée : l'utilisateur créé reste en base (pas d'endpoint de suppression de compte) ; un `POST /admin/reset` avec `keep-users` ou `all` s'en charge. Le script est aussi testé contre l'app dans `npm test`.
 - Docker n'était pas disponible sur la machine de développement : l'image n'a pas été construite localement, seul le build TypeScript et le démarrage de `dist/server.js` ont été vérifiés.
+
+## P3 (bloc 2, branche `v2`)
+
+- La spec nomme la branche `block2` ; le travail est fait sur `v2`, sur demande explicite de l'enseignant. Rien n'est poussé sur `main`.
+- Contradiction de la spec : `/admin/settings` devrait être « toujours documentée » (section 9) alors que l'OpenAPI doit rester strictement identique à la référence quand le bloc 2 est désactivé (section 1). Le test de contrat gagne : la route fonctionne toujours, mais elle n'apparaît dans `/openapi.json` qu'une fois le bloc 2 activé. Son usage est documenté dans le README.
+- Le test de bloc 1 « chaque route Express figure dans /openapi.json » parcourt `app.locals.apiRouter`. Les routes du bloc 2 vivent donc dans deux autres routeurs (`app.locals.block2Routers`) : l'un toujours actif (`/admin/settings`), l'autre derrière un interrupteur qui laisse tomber dans le 404 standard quand le bloc 2 est désactivé. Aucun test du bloc 1 n'a été modifié.
+- Les réglages (`block2Enabled`, `lockMode`) sont lus en base au démarrage puis tenus en mémoire (une seule instance). Une valeur stockée prime sur la variable d'environnement. Écrire un réglage fige les deux valeurs en base.
+- `lockMode` effectif : toujours `off` tant que le bloc 2 est désactivé. Désactiver le bloc 2 remet `lockMode` à `off` en base. `LOCK_MODE=on` avec `BLOCK2_ENABLED=false` empêche le démarrage (« refusé si le bloc 2 est désactivé »).
+- Le bus d'événements transmet la base d'origine en second argument (`events.emit(nom, payload, db)`), pour qu'un hub ne traite que les événements de sa propre base. Les payloads du bloc 1 sont inchangés. Deux événements ajoutés : `comment:deleted` et `drop:opened`. Le déverrouillage d'un drop (`/admin/drops/:id/unhide`) émet désormais `drop:updated`.
+- Le hub WebSocket relit le drop en base pour **chaque destinataire** à chaque événement (même sérialisation que `GET /drops/:id`), sans jamais réutiliser l'objet de l'émetteur.
+- Un drop qui passe en `hidden` est diffusé comme `drop:updated` à son auteur, et comme `drop:deleted` aux autres (pour qu'ils le retirent de leur liste). Quand il est réactivé, tout le monde reçoit `drop:updated`.
+- Raison de fermeture WebSocket : l'identifiant de la colonne « Raison » de la spec (`session_expired`, `block2_disabled`…), pour que le client puisse l'aiguiller sans parser du texte.
+- `presence:view` sur un drop inexistant ou masqué : message `error` avec `code: "not_found"` (la spec ne prévoit que `bad_message`).
+- Handshake refusé : 401 `invalid_token` pour un ticket absent, expiré ou déjà utilisé ; 401 `token_expired` / `token_revoked` si le JWT d'origine ne vaut plus ; 404 `not_found` si le bloc 2 est désactivé ou si le chemin n'est pas `/ws`.
+- `POST /realtime/ticket` compte dans la limite de **lecture** (et non d'écriture) : une application qui se reconnecte souvent ne doit pas épuiser son quota d'écritures. L'URL du ticket commence par `wss://` derrière HTTPS (proxy compris), `ws://` en local.
+- Messages WebSocket limités à 8 ko ; au-delà, `ws` ferme la connexion.
+- Présence : un utilisateur connecté plusieurs fois n'apparaît qu'une fois dans `presence:online` et `viewers`.
+- Le simulateur n'a qu'un contrôleur d'état à ce stade (`POST /admin/simulator` et `GET /admin/settings` répondent) ; les actions simulées arrivent en P5.
+- Le contrat `contract.md` du bloc 1 est aussi gardé en référence (`tests/contract/contract-block1.md`) : désactivé, il doit être identique à l'octet près.
+
+## P4
+
+- `GET /drops` : quand le bloc 2 est activé, le schéma des paramètres est élargi (`near`, `radius`, `bbox`, `sort=distance`, `pageSize` jusqu'à 200). Les règles croisées (exclusivité, `radius` sans `near`, `sort=distance` sans `near`, `pageSize` > 50 sans `bbox`) sont vérifiées après le schéma, dans `refineQuery`. Désactivé, le schéma du bloc 1 est utilisé tel quel : les paramètres du bloc 2 sont ignorés, `sort=distance` et `pageSize=51` renvoient les 422 du bloc 1.
+- Seul un `sort` **explicite** à `recent` ou `popular` empêche le tri par distance par défaut avec `near`. `radius` n'a pas de défaut dans le schéma (sinon on ne pourrait pas détecter un `radius` sans `near`) ; le défaut de 1000 m est appliqué dans le code.
+- Les erreurs de `near` et `bbox` (format, bornes, min > max) portent la clé du paramètre, un seul message par paramètre. Les nombres doivent s'écrire sans exposant (`47.4955`, pas `4.7e1`). `pageSize` trop grand renvoie 422 sur `pageSize` avec « Doit être un entier entre 1 et 50 » (ou la limite de `bbox`).
+- Calcul : pré-filtre SQL par rectangle (marge de 0,0006° pour couvrir l'arrondi des drops verrouillés), puis haversine exacte dans le code sur la position **effective** (approchée pour un drop verrouillé, exacte sinon). Avec `near` ou `bbox`, filtrage, tri et pagination se font en mémoire sur les candidats du rectangle (au plus quelques milliers de lignes).
+- Arrondi des drops verrouillés : `Math.round(valeur × 1000) / 1000`, une grille fixe de 0,001° (ni bruit, ni dépendance au temps). Le point de la grille est le plus proche, pas le coin.
+- Verrouillage : un drop est verrouillé quand `lockMode` vaut `on` pour tout visiteur sans token, et pour tout utilisateur qui n'en est pas l'auteur et ne l'a pas ouvert. L'auteur et les ouvreurs voient la position exacte.
+- `403 drop_locked` : likes (poser et retirer), lecture et écriture de commentaires. Signaler un drop verrouillé reste possible (la spec ne le liste pas). `DELETE /comments/:id` n'est pas concerné.
+- `POST /drops/:id/open` : l'ordre des contrôles reste celui du bloc 1 (authentification, identifiant, existence puis 404 si masqué, puis validation 422, puis la règle de distance). `requiredM` vaut `OPEN_RADIUS_M` (sans la tolérance d'`accuracy`) et `distanceM` est arrondi à la dizaine la plus proche. Compteur de limite dédié `RATE_LIMIT_OPEN_PER_MIN`, par utilisateur.
+- L'ouverture d'un drop ne dépend pas de `lockMode`. Un drop masqué renvoie 404 sauf à son auteur. La position envoyée n'est lue que pour calculer la distance : elle n'est ni copiée en base, ni dans les logs (le logger n'écrit que méthode, chemin, statut, durée), ni dans la réponse d'erreur.
+- Limite connue de la spec : `too_far` donne la distance (à 10 m près) au point exact d'un drop, ce qui permet à qui sonde depuis plusieurs positions de retrouver un drop verrouillé. Elle est bornée par la limite de 30 tentatives par minute ; c'est le prix du message demandé.
+- `GET /drops/:id/opens` : du plus récent au plus ancien (la spec ne fixe pas l'ordre), 404 si le drop est inconnu ou masqué, 403 pour tout autre que l'auteur.
+- La doc ajoute, quand le bloc 2 est activé, une réponse 403 `drop_locked` aux likes et aux commentaires, `distanceM` (facultatif) dans `Drop`, `meta` (facultatif) dans `ErrorResponse`, et complète la description de `GET /drops`.
+
+## P5
+
+- Source du jeu de données : le jeu « Les bibliothèques des collectivités territoriales : adresses et données d'activité » du ministère de la Culture, retrouvé par son identifiant data.gouv.fr (`5c3538da9ce2e7459c6d765a`) car l'ancien domaine `data.culture.gouv.fr` redirige maintenant vers une page HTML et plus vers l'API d'export. Le script lit l'export JSON de la ressource principale (repli sur l'URL de l'export du 27/08/2025) : 15 704 établissements.
+- Anomalies réelles de la source, relevées par le script et reprises dans la doc de la route : **166 points sans coordonnées** (`lat` et `lng` valent `null`, 1,06 %), **15 538 points dont les coordonnées sont des chaînes** (`"46.769255"`) au lieu de nombres, 1 sans code postal, 14 sans département. Aucune coordonnée inversée, nulle ou hors du monde. Quelques points sont en Nouvelle-Calédonie : valides, mais loin de la métropole.
+- Comme la source dépasse déjà 1 % d'anomalies (les nulls seuls font 1,06 %), **aucune anomalie n'a été ajoutée** : `source.synthetic` vaut `false`. Le jeu synthétique de secours (15 000 points déterministes, environ 2 % d'anomalies variées) existe dans le script (`--synthetic`, ou automatiquement si le téléchargement échoue) mais n'est pas celui commité.
+- `lat` et `lng` sont gardés tels que la source les donne : chaînes, `null`. Un point est « valide » pour `?format=geojson` s'il a deux coordonnées convertibles en nombres, dans les bornes WGS84 et différentes de (0, 0) ; les chaînes numériques sont converties et acceptées. Les 166 points sans coordonnées sont écartés (`skipped`).
+- `?format=geojson` ajoute un membre `source` (attribution de la licence) à côté de `skipped`. `?format` inconnu : 422 sur `format`.
+- Compression : le middleware `compression` ne couvre que `/dataset/points` (le reste de l'API reste non compressé, comme au bloc 1). `Cache-Control: public, max-age=86400` remplace `no-store` sur la réponse 200 seulement : les erreurs (`?fail`) gardent `no-store`.
+- `data/points.json` est commité (exception dans `.gitignore` et `.dockerignore`) et copié dans l'image par le `Dockerfile`.
+- Simulateur : une action tirée au sort parmi like (50 %), commentaire (30 %), ouverture (15 %), création (5 %) ; si l'action tirée ne trouve pas de cible, il se rabat sur un like. Les commentaires ne visent que des drops d'utilisateurs d'exemple. Un like ou un commentaire respecte le verrouillage : l'acteur doit être l'auteur du drop ou l'avoir ouvert. Une ouverture ignore la distance (« directement par le service »). Les créations tombent dans un rayon de 2,5 km autour du centre de la zone, marquées `is_seed = 1`. Les likes, commentaires et ouvertures n'ont pas de colonne `is_seed` : ils disparaissent avec `POST /admin/reset`, qui vide ces tables entières.
+- Le simulateur s'arrête tout seul quand le bloc 2 est désactivé à chaud. `SIMULATOR_ENABLED=true` ne le démarre qu'au lancement du serveur, si le bloc 2 est activé. Les services partagés (`src/services.ts` : création de drop, like, commentaire ; `recordOpen` pour l'ouverture) servent à la fois l'API et le simulateur.
+- Le simulateur agit aussi au nom des comptes d'exemple (`mathis`, `noah`, etc.) : un élève connecté en `mathis` verra donc des likes arriver sur « ses » drops.
+- `POST /admin/simulator` : `intervalSeconds` de 1 à 3600, corps strict. Il renvoie l'état `{ enabled, intervalSeconds }`.
+- `smoke:block2` : lit les réglages, active le bloc 2 si besoin, coupe `lockMode` pour la durée du test, puis restaure `block2Enabled` et `lockMode` d'origine et supprime les drops créés. Les deux comptes de fumée restent en base (pas d'endpoint de suppression de compte) : un `POST /admin/reset` avec `keep-users` ou `all` s'en charge. Le script avertit (sans bloquer) si l'URL ne contient pas `staging`. Il utilise `ws://` ou `wss://` selon le schéma de l'URL, sans lire l'URL renvoyée par le ticket.
+- Le test du script de fumée passe contre une instance locale : il vérifie 7 ✅ et la restauration des réglages.
+
+## Accès et comptes d'exemple (révision)
+
+- Toutes les lectures exigent désormais un token : `GET /drops`, `/drops/{id}`, `/drops/{id}/comments`, `/users/{username}`, `/categories` et `/dataset/points`. Sans token : 401 `unauthorized`. Restent publics : `/health`, `POST /auth/register`, `POST /auth/login` et la documentation. Le mode d'accès « token facultatif » n'est plus utilisé par aucune route.
+- Cette révision modifie le contrat du bloc 1 (`security`, réponse 401 de `/categories`, quelques phrases) : les références `tests/contract/*` ont été régénérées en conséquence.
+- Comptes d'exemple : `mathis`, `noah`, `ethan`, `paul`, `paolo`, `nicolas`, `ugo`, `bryan`, `tom` (mot de passe `drops2026`, e-mail `<nom>@example.com`). Un seul drop par compte, aucun like ni commentaire au départ.
+- Les tests de lecture et de temps réel utilisent l'ancien jeu riche (13 comptes, 60 drops) comme fixture dans `tests/fixtures/` ; les `GET` de ces clients de test envoient un token par défaut. Le vrai jeu est couvert par `tests/seed.test.ts`.

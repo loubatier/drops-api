@@ -1,0 +1,5669 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Drops API",
+    "version": "1.0.0",
+    "description": "\nAPI de support pour le module R505 (BUT MMI, Montbéliard). Les élèves déposent des **drops** : des messages géolocalisés qu'on peut liker et commenter.\n\n## Conventions\n- JSON uniquement, champs en camelCase, dates ISO 8601 UTC.\n- Authentification : `Authorization: Bearer <token>`. L'API ne pose aucun cookie.\n- Un token présent mais invalide, expiré ou révoqué renvoie **401 sur toutes les routes**, même publiques.\n- Corps stricts : un champ inconnu renvoie 422, et les types ne sont pas convertis (`\"47.49\"` n'est pas un nombre).\n- Chaque réponse porte `X-Request-Id` et `Cache-Control: no-store`.\n\n## Format d'erreur\nToutes les erreurs ont la même forme. `fields` est toujours présent (objet vide hors erreur de champ), `simulated` vaut `true` pour les erreurs provoquées par `?fail=`.\n\n```json\n{\n  \"error\": {\n    \"status\": 422,\n    \"code\": \"validation_failed\",\n    \"message\": \"Le formulaire contient des erreurs.\",\n    \"fields\": { \"title\": [\"Le titre doit faire au moins 3 caractères.\"] },\n    \"requestId\": \"req_8f2c1a3b\",\n    \"simulated\": false\n  }\n}\n```\n\nCodes : `bad_request` (400), `unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials` (401), `forbidden` (403), `not_found` (404), `conflict` (409), `validation_failed` (422), `rate_limited` (429), `internal_error` (500), `service_unavailable` (503).\n\n## Outils pédagogiques\n- `?delay=<ms>` (0 à 10000) : attend avant de traiter la requête.\n- `?fail=<statut>` (400, 401, 403, 404, 409, 422, 429, 500, 503) : la requête n'est pas exécutée, l'API renvoie l'erreur correspondante avec `simulated: true` et l'en-tête `X-Simulated: true`. Avec `fail=422`, chaque champ du corps reçoit « Erreur simulée sur ce champ. ». Avec `fail=429`, `Retry-After: 5`.\n- Les deux se combinent : `?delay=2000&fail=500`. Une valeur invalide renvoie un vrai 422.\n- `POST /auth/login?ttl=<secondes>` (10 à la durée maximale) : token de courte durée pour tester l'expiration de session.\n\n## Comptes de démo\nTous les comptes d'exemple ont le mot de passe `drops2026`. Utilisez `mathis` / `drops2026`, ou un autre prénom (par exemple `noah`), pour tester le 403 avec un deuxième compte.\n"
+  },
+  "tags": [
+    {
+      "name": "Santé",
+      "description": "État du service et accès à la documentation."
+    },
+    {
+      "name": "Auth",
+      "description": "Inscription, connexion, session."
+    },
+    {
+      "name": "Utilisateurs",
+      "description": "Profils publics."
+    },
+    {
+      "name": "Drops",
+      "description": "Lecture, création, modification et suppression des drops."
+    },
+    {
+      "name": "Likes",
+      "description": "Liker et retirer son like."
+    },
+    {
+      "name": "Commentaires",
+      "description": "Commentaires des drops."
+    },
+    {
+      "name": "Signalement",
+      "description": "Signalement des drops problématiques."
+    },
+    {
+      "name": "Admin (enseignant)",
+      "description": "Routes réservées à la clé `X-Admin-Key`."
+    },
+    {
+      "name": "Outils pédagogiques",
+      "description": "Paramètres `?delay=`, `?fail=` (toutes les routes) et `?ttl=` (`POST /auth/login`). Voir l'introduction."
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Token obtenu via `/auth/login` ou `/auth/register`."
+      },
+      "adminKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Admin-Key",
+        "description": "Clé de l'enseignant."
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "integer"
+              },
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "fields": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "simulated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "status",
+              "code",
+              "message",
+              "fields",
+              "requestId",
+              "simulated"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "Root": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "docs": {
+            "type": "string"
+          },
+          "openapi": {
+            "type": "string"
+          },
+          "contract": {
+            "type": "string"
+          },
+          "health": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "docs",
+          "openapi",
+          "contract",
+          "health"
+        ]
+      },
+      "Health": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ]
+          },
+          "service": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "time": {
+            "type": "string"
+          },
+          "uptimeSeconds": {
+            "type": "integer"
+          },
+          "db": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "service",
+          "version",
+          "commit",
+          "time",
+          "uptimeSeconds",
+          "db"
+        ]
+      },
+      "PrivateUser": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "bio": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "email",
+          "displayName",
+          "bio",
+          "avatarUrl",
+          "createdAt"
+        ]
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/PrivateUser"
+          },
+          "token": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user",
+          "token",
+          "expiresAt"
+        ]
+      },
+      "Profile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "bio": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "stats": {
+            "type": "object",
+            "properties": {
+              "dropsCount": {
+                "type": "integer"
+              },
+              "likesReceived": {
+                "type": "integer"
+              },
+              "commentsCount": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "dropsCount",
+              "likesReceived",
+              "commentsCount"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "displayName",
+          "bio",
+          "avatarUrl",
+          "createdAt",
+          "stats"
+        ]
+      },
+      "Category": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "note",
+              "photo",
+              "tip",
+              "riddle"
+            ]
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ]
+      },
+      "PublicUser": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "displayName",
+          "avatarUrl"
+        ]
+      },
+      "Drop": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "note",
+              "photo",
+              "tip",
+              "riddle"
+            ]
+          },
+          "imageUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "type": "object",
+            "properties": {
+              "lat": {
+                "type": "number"
+              },
+              "lng": {
+                "type": "number"
+              },
+              "precision": {
+                "type": "string",
+                "enum": [
+                  "exact",
+                  "approx"
+                ]
+              }
+            },
+            "required": [
+              "lat",
+              "lng",
+              "precision"
+            ]
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "author": {
+            "$ref": "#/components/schemas/PublicUser"
+          },
+          "likesCount": {
+            "type": "integer"
+          },
+          "commentsCount": {
+            "type": "integer"
+          },
+          "opensCount": {
+            "type": "integer"
+          },
+          "likedByMe": {
+            "type": "boolean"
+          },
+          "openedByMe": {
+            "type": "boolean"
+          },
+          "isMine": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "content",
+          "category",
+          "imageUrl",
+          "location",
+          "locked",
+          "hidden",
+          "author",
+          "likesCount",
+          "commentsCount",
+          "opensCount",
+          "likedByMe",
+          "openedByMe",
+          "isMine",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "DropPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Drop"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "totalPages": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "total",
+          "totalPages"
+        ]
+      },
+      "LikeState": {
+        "type": "object",
+        "properties": {
+          "liked": {
+            "type": "boolean"
+          },
+          "likesCount": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "liked",
+          "likesCount"
+        ]
+      },
+      "Comment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "dropId": {
+            "type": "integer"
+          },
+          "content": {
+            "type": "string"
+          },
+          "author": {
+            "$ref": "#/components/schemas/PublicUser"
+          },
+          "isMine": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "dropId",
+          "content",
+          "author",
+          "isMine",
+          "createdAt"
+        ]
+      },
+      "CommentPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Comment"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "totalPages": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "total",
+          "totalPages"
+        ]
+      },
+      "ResetResult": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "integer"
+          },
+          "drops": {
+            "type": "integer"
+          },
+          "comments": {
+            "type": "integer"
+          },
+          "likes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "users",
+          "drops",
+          "comments",
+          "likes"
+        ]
+      },
+      "ReportedDrop": {
+        "type": "object",
+        "properties": {
+          "drop": {
+            "$ref": "#/components/schemas/Drop"
+          },
+          "reports": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "details": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "user": {
+                  "$ref": "#/components/schemas/PublicUser"
+                }
+              },
+              "required": [
+                "id",
+                "reason",
+                "details",
+                "createdAt",
+                "user"
+              ]
+            }
+          }
+        },
+        "required": [
+          "drop",
+          "reports"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "tags": [
+          "Santé"
+        ],
+        "summary": "Point d'entrée",
+        "description": "Liens vers la documentation, la spécification, le contrat et la santé de l'API.",
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Liens de l'API.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Root"
+                },
+                "example": {
+                  "name": "Drops API",
+                  "docs": "/docs",
+                  "openapi": "/openapi.json",
+                  "contract": "/contract.md",
+                  "health": "/health"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Santé"
+        ],
+        "summary": "État du service",
+        "description": "Renvoie 200 si l'API et la base répondent, 503 avec `status: \"degraded\"` sinon. Sans limite de requêtes. Utilisable pour une page de statut.",
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service en bonne santé.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                },
+                "example": {
+                  "status": "ok",
+                  "service": "drops-api",
+                  "version": "1.0.0",
+                  "commit": "abc1234",
+                  "time": "2026-11-16T09:12:00.000Z",
+                  "uptimeSeconds": 1234,
+                  "db": "ok"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Base indisponible.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                },
+                "example": {
+                  "status": "degraded",
+                  "service": "drops-api",
+                  "version": "1.0.0",
+                  "commit": "abc1234",
+                  "time": "2026-11-16T09:12:00.000Z",
+                  "uptimeSeconds": 1234,
+                  "db": "error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/docs": {
+      "get": {
+        "tags": [
+          "Santé"
+        ],
+        "summary": "Documentation interactive",
+        "description": "Interface Swagger UI générée depuis `/openapi.json`.",
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page HTML.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "<!doctype html>…"
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "Santé"
+        ],
+        "summary": "Spécification OpenAPI 3.1",
+        "description": "Spécification OpenAPI complète, générée depuis le code de l'API.",
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Document OpenAPI.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "openapi": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "openapi"
+                  ]
+                },
+                "example": {
+                  "openapi": "3.1.0",
+                  "info": {
+                    "title": "Drops API",
+                    "version": "1.0.0"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contract.md": {
+      "get": {
+        "tags": [
+          "Santé"
+        ],
+        "summary": "Contrat en Markdown",
+        "description": "Résumé compact du contrat (types TypeScript, routes, erreurs, outils pédagogiques), à glisser dans un fichier d'agent.",
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Texte Markdown.",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "# Drops API : contrat v1.0.0"
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Créer un compte",
+        "description": "Crée un compte et renvoie directement un token. Le nom d'utilisateur et l'e-mail sont mis en minuscules. `admin` et `me` sont réservés.",
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 20,
+                    "pattern": "^[a-z0-9_]+$"
+                  },
+                  "email": {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 72
+                  },
+                  "displayName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "bio": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 280
+                  }
+                },
+                "required": [
+                  "username",
+                  "email",
+                  "password",
+                  "displayName"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Compte créé.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                },
+                "example": {
+                  "user": {
+                    "id": 3,
+                    "username": "lea",
+                    "email": "lea@example.com",
+                    "displayName": "Léa",
+                    "bio": null,
+                    "avatarUrl": null,
+                    "createdAt": "2026-11-16T08:00:00.000Z"
+                  },
+                  "token": "eyJhbGciOiJIUzI1NiIsInR9.eyJzdWIiOiIzIn0.signature",
+                  "expiresAt": "2026-11-16T16:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON illisible (`bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 400,
+                    "code": "bad_request",
+                    "message": "Requête illisible.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflit : valeur déjà prise (`conflict`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 409,
+                    "code": "conflict",
+                    "message": "Cette ressource existe déjà.",
+                    "fields": {
+                      "username": [
+                        "Ce nom d'utilisateur est déjà pris."
+                      ]
+                    },
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Corps ou paramètres invalides (`validation_failed`), détail dans `fields`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 422,
+                    "code": "validation_failed",
+                    "message": "Le formulaire contient des erreurs.",
+                    "fields": {
+                      "title": [
+                        "Le titre doit faire au moins 3 caractères."
+                      ]
+                    },
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Auth",
+          "Outils pédagogiques"
+        ],
+        "summary": "Se connecter",
+        "description": "Connexion par e-mail **ou** nom d'utilisateur. Le paramètre `?ttl=<secondes>` émet un token de courte durée pour tester l'expiration de session.",
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 28800,
+              "description": "Durée de vie du token en secondes (10 à 28800), pour tester l'expiration de session.",
+              "example": 10
+            },
+            "required": false,
+            "name": "ttl",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "login": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "login",
+                  "password"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Connexion réussie.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                },
+                "example": {
+                  "user": {
+                    "id": 3,
+                    "username": "lea",
+                    "email": "lea@example.com",
+                    "displayName": "Léa",
+                    "bio": null,
+                    "avatarUrl": null,
+                    "createdAt": "2026-11-16T08:00:00.000Z"
+                  },
+                  "token": "eyJhbGciOiJIUzI1NiIsInR9.eyJzdWIiOiIzIn0.signature",
+                  "expiresAt": "2026-11-16T16:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON illisible (`bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 400,
+                    "code": "bad_request",
+                    "message": "Requête illisible.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Corps ou paramètres invalides (`validation_failed`), détail dans `fields`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 422,
+                    "code": "validation_failed",
+                    "message": "Le formulaire contient des erreurs.",
+                    "fields": {
+                      "title": [
+                        "Le titre doit faire au moins 3 caractères."
+                      ]
+                    },
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Se déconnecter",
+        "description": "Révoque le token courant : toute requête suivante avec ce token renvoie 401 `token_revoked`.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Token révoqué."
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Mon compte",
+        "description": "Renvoie le compte de l'utilisateur connecté, avec son e-mail.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mon compte.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivateUser"
+                },
+                "example": {
+                  "id": 3,
+                  "username": "lea",
+                  "email": "lea@example.com",
+                  "displayName": "Léa",
+                  "bio": null,
+                  "avatarUrl": null,
+                  "createdAt": "2026-11-16T08:00:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Modifier mon profil",
+        "description": "Au moins un champ parmi `displayName`, `bio` et `avatarUrl`. `bio` et `avatarUrl` acceptent `null`.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "displayName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "bio": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 280
+                  },
+                  "avatarUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 500
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Compte mis à jour.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivateUser"
+                },
+                "example": {
+                  "id": 3,
+                  "username": "lea",
+                  "email": "lea@example.com",
+                  "displayName": "Léa",
+                  "bio": null,
+                  "avatarUrl": null,
+                  "createdAt": "2026-11-16T08:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON illisible (`bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 400,
+                    "code": "bad_request",
+                    "message": "Requête illisible.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Corps ou paramètres invalides (`validation_failed`), détail dans `fields`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 422,
+                    "code": "validation_failed",
+                    "message": "Le formulaire contient des erreurs.",
+                    "fields": {
+                      "title": [
+                        "Le titre doit faire au moins 3 caractères."
+                      ]
+                    },
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/{username}": {
+      "get": {
+        "tags": [
+          "Utilisateurs"
+        ],
+        "summary": "Profil d'un utilisateur",
+        "description": "Profil public avec statistiques (drops visibles, likes reçus, commentaires écrits). Les drops d'un utilisateur s'obtiennent avec `GET /drops?author=<username>`.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Nom d'utilisateur (minuscules).",
+              "example": "lea"
+            },
+            "required": true,
+            "name": "username",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Profil.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                },
+                "example": {
+                  "id": 3,
+                  "username": "lea",
+                  "displayName": "Léa",
+                  "bio": "Je cherche les bancs au soleil.",
+                  "avatarUrl": null,
+                  "createdAt": "2026-11-16T08:00:00.000Z",
+                  "stats": {
+                    "dropsCount": 6,
+                    "likesReceived": 14,
+                    "commentsCount": 9
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource ou route inexistante (`not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 404,
+                    "code": "not_found",
+                    "message": "Ressource introuvable.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/categories": {
+      "get": {
+        "tags": [
+          "Drops"
+        ],
+        "summary": "Catégories de drops",
+        "description": "Les quatre catégories disponibles.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Liste des catégories.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Category"
+                  }
+                },
+                "example": [
+                  {
+                    "id": "note",
+                    "label": "Un mot"
+                  },
+                  {
+                    "id": "photo",
+                    "label": "Une photo"
+                  },
+                  {
+                    "id": "tip",
+                    "label": "Une recommandation"
+                  },
+                  {
+                    "id": "riddle",
+                    "label": "Une énigme"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/drops": {
+      "get": {
+        "tags": [
+          "Drops"
+        ],
+        "summary": "Lister les drops",
+        "description": "Liste paginée des drops, du plus récent au plus ancien par défaut. Les drops masqués sont exclus. Token requis : il alimente `likedByMe` et `isMine`.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "description": "Numéro de page, à partir de 1."
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20,
+              "description": "Éléments par page (1 à 50)."
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "description": "Recherche insensible à la casse et aux accents dans le titre, le contenu et le nom d'utilisateur de l'auteur.",
+              "example": "banc"
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "note",
+                "photo",
+                "tip",
+                "riddle"
+              ]
+            },
+            "required": false,
+            "name": "category",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Nom d'utilisateur de l'auteur.",
+              "example": "mathis"
+            },
+            "required": false,
+            "name": "author",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "recent",
+                "popular"
+              ],
+              "default": "recent",
+              "description": "`popular` : likes décroissants, puis du plus récent au plus ancien."
+            },
+            "required": false,
+            "name": "sort",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page de drops.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DropPage"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": 42,
+                      "title": "Le banc le plus calme du coin",
+                      "content": "Derrière le bâtiment, à l'ombre. Idéal pour réviser.",
+                      "category": "tip",
+                      "imageUrl": null,
+                      "location": {
+                        "lat": 47.49561,
+                        "lng": 6.80544,
+                        "precision": "exact"
+                      },
+                      "locked": false,
+                      "hidden": false,
+                      "author": {
+                        "id": 3,
+                        "username": "lea",
+                        "displayName": "Léa",
+                        "avatarUrl": null
+                      },
+                      "likesCount": 4,
+                      "commentsCount": 2,
+                      "opensCount": 0,
+                      "likedByMe": false,
+                      "openedByMe": false,
+                      "isMine": false,
+                      "createdAt": "2026-11-16T09:12:00.000Z",
+                      "updatedAt": "2026-11-16T09:12:00.000Z"
+                    }
+                  ],
+                  "page": 1,
+                  "pageSize": 20,
+                  "total": 57,
+                  "totalPages": 3
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Corps ou paramètres invalides (`validation_failed`), détail dans `fields`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 422,
+                    "code": "validation_failed",
+                    "message": "Le formulaire contient des erreurs.",
+                    "fields": {
+                      "title": [
+                        "Le titre doit faire au moins 3 caractères."
+                      ]
+                    },
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Drops"
+        ],
+        "summary": "Créer un drop",
+        "description": "Dépose un drop à la position `lat`/`lng`. Les coordonnées doivent être des nombres (pas des chaînes). Une `photo` exige `imageUrl`.\n\n**Pourquoi une zone ?** Le point doit se trouver à 3 km au plus du département MMI. C'est un choix éthique : cela empêche de déposer un drop près de son domicile, ce qui révélerait où l'on habite. Toutes les erreurs de coordonnées (type, bornes, zone) sont rangées sous la clé `location`.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 80
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "note",
+                      "photo",
+                      "tip",
+                      "riddle"
+                    ]
+                  },
+                  "imageUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 500
+                  },
+                  "lat": {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90
+                  },
+                  "lng": {
+                    "type": "number",
+                    "minimum": -180,
+                    "maximum": 180
+                  }
+                },
+                "required": [
+                  "title",
+                  "content",
+                  "category",
+                  "lat",
+                  "lng"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Drop créé.",
+            "headers": {
+              "Location": {
+                "description": "Chemin du drop créé, par exemple `/drops/42`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Drop"
+                },
+                "example": {
+                  "id": 42,
+                  "title": "Le banc le plus calme du coin",
+                  "content": "Derrière le bâtiment, à l'ombre. Idéal pour réviser.",
+                  "category": "tip",
+                  "imageUrl": null,
+                  "location": {
+                    "lat": 47.49561,
+                    "lng": 6.80544,
+                    "precision": "exact"
+                  },
+                  "locked": false,
+                  "hidden": false,
+                  "author": {
+                    "id": 3,
+                    "username": "lea",
+                    "displayName": "Léa",
+                    "avatarUrl": null
+                  },
+                  "likesCount": 4,
+                  "commentsCount": 2,
+                  "opensCount": 0,
+                  "likedByMe": false,
+                  "openedByMe": false,
+                  "isMine": true,
+                  "createdAt": "2026-11-16T09:12:00.000Z",
+                  "updatedAt": "2026-11-16T09:12:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON illisible (`bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 400,
+                    "code": "bad_request",
+                    "message": "Requête illisible.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Corps ou paramètres invalides (`validation_failed`), détail dans `fields`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 422,
+                    "code": "validation_failed",
+                    "message": "Le formulaire contient des erreurs.",
+                    "fields": {
+                      "title": [
+                        "Le titre doit faire au moins 3 caractères."
+                      ]
+                    },
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/drops/{id}": {
+      "get": {
+        "tags": [
+          "Drops"
+        ],
+        "summary": "Détail d'un drop",
+        "description": "404 si le drop n'existe pas, ou s'il est masqué et que l'appelant n'en est pas l'auteur. L'auteur voit son drop masqué avec `hidden: true`.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$",
+              "description": "Identifiant numérique.",
+              "example": "42"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Drop.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Drop"
+                },
+                "example": {
+                  "id": 42,
+                  "title": "Le banc le plus calme du coin",
+                  "content": "Derrière le bâtiment, à l'ombre. Idéal pour réviser.",
+                  "category": "tip",
+                  "imageUrl": null,
+                  "location": {
+                    "lat": 47.49561,
+                    "lng": 6.80544,
+                    "precision": "exact"
+                  },
+                  "locked": false,
+                  "hidden": false,
+                  "author": {
+                    "id": 3,
+                    "username": "lea",
+                    "displayName": "Léa",
+                    "avatarUrl": null
+                  },
+                  "likesCount": 4,
+                  "commentsCount": 2,
+                  "opensCount": 0,
+                  "likedByMe": false,
+                  "openedByMe": false,
+                  "isMine": false,
+                  "createdAt": "2026-11-16T09:12:00.000Z",
+                  "updatedAt": "2026-11-16T09:12:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource ou route inexistante (`not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 404,
+                    "code": "not_found",
+                    "message": "Ressource introuvable.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Drops"
+        ],
+        "summary": "Modifier un drop",
+        "description": "Réservé à l'auteur. Au moins un champ parmi ceux de la création ; `lat` et `lng` vont ensemble. Les mêmes règles s'appliquent (zone, photo avec image).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$",
+              "description": "Identifiant numérique.",
+              "example": "42"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 80
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "note",
+                      "photo",
+                      "tip",
+                      "riddle"
+                    ]
+                  },
+                  "imageUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 500
+                  },
+                  "lat": {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90
+                  },
+                  "lng": {
+                    "type": "number",
+                    "minimum": -180,
+                    "maximum": 180
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Drop modifié.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Drop"
+                },
+                "example": {
+                  "id": 42,
+                  "title": "Le banc le plus calme du coin",
+                  "content": "Derrière le bâtiment, à l'ombre. Idéal pour réviser.",
+                  "category": "tip",
+                  "imageUrl": null,
+                  "location": {
+                    "lat": 47.49561,
+                    "lng": 6.80544,
+                    "precision": "exact"
+                  },
+                  "locked": false,
+                  "hidden": false,
+                  "author": {
+                    "id": 3,
+                    "username": "lea",
+                    "displayName": "Léa",
+                    "avatarUrl": null
+                  },
+                  "likesCount": 4,
+                  "commentsCount": 2,
+                  "opensCount": 0,
+                  "likedByMe": false,
+                  "openedByMe": false,
+                  "isMine": true,
+                  "createdAt": "2026-11-16T09:12:00.000Z",
+                  "updatedAt": "2026-11-16T09:12:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON illisible (`bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 400,
+                    "code": "bad_request",
+                    "message": "Requête illisible.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authentifié mais non autorisé (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 403,
+                    "code": "forbidden",
+                    "message": "Vous n'avez pas le droit d'effectuer cette action.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource ou route inexistante (`not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 404,
+                    "code": "not_found",
+                    "message": "Ressource introuvable.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Corps ou paramètres invalides (`validation_failed`), détail dans `fields`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 422,
+                    "code": "validation_failed",
+                    "message": "Le formulaire contient des erreurs.",
+                    "fields": {
+                      "title": [
+                        "Le titre doit faire au moins 3 caractères."
+                      ]
+                    },
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Drops"
+        ],
+        "summary": "Supprimer un drop",
+        "description": "Réservé à l'auteur (token) ou à l'enseignant (`X-Admin-Key`). Supprime aussi les likes, commentaires, ouvertures et signalements du drop.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "adminKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$",
+              "description": "Identifiant numérique.",
+              "example": "42"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Clé de l'enseignant, à la place du token.",
+              "example": "cle-enseignant"
+            },
+            "required": false,
+            "name": "X-Admin-Key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Drop supprimé."
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authentifié mais non autorisé (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 403,
+                    "code": "forbidden",
+                    "message": "Vous n'avez pas le droit d'effectuer cette action.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource ou route inexistante (`not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 404,
+                    "code": "not_found",
+                    "message": "Ressource introuvable.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/drops/{id}/like": {
+      "post": {
+        "tags": [
+          "Likes"
+        ],
+        "summary": "Liker un drop",
+        "description": "Idempotent : liker deux fois ne compte qu’une fois. Liker son propre drop est autorisé.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$",
+              "description": "Identifiant numérique.",
+              "example": "42"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "État du like.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LikeState"
+                },
+                "example": {
+                  "liked": true,
+                  "likesCount": 5
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource ou route inexistante (`not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 404,
+                    "code": "not_found",
+                    "message": "Ressource introuvable.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Likes"
+        ],
+        "summary": "Retirer son like",
+        "description": "Idempotent : retirer un like absent renvoie le même résultat.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$",
+              "description": "Identifiant numérique.",
+              "example": "42"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "État du like.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LikeState"
+                },
+                "example": {
+                  "liked": false,
+                  "likesCount": 4
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource ou route inexistante (`not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 404,
+                    "code": "not_found",
+                    "message": "Ressource introuvable.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/drops/{id}/comments": {
+      "get": {
+        "tags": [
+          "Commentaires"
+        ],
+        "summary": "Commentaires d'un drop",
+        "description": "Page de commentaires, du plus ancien au plus récent. 404 si le drop n'existe pas ou est masqué pour l'appelant.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$",
+              "description": "Identifiant numérique.",
+              "example": "42"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "description": "Numéro de page, à partir de 1."
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20,
+              "description": "Éléments par page (1 à 50)."
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page de commentaires.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentPage"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": 7,
+                      "dropId": 42,
+                      "content": "Validé !",
+                      "author": {
+                        "id": 5,
+                        "username": "yanis",
+                        "displayName": "Yanis",
+                        "avatarUrl": null
+                      },
+                      "isMine": false,
+                      "createdAt": "2026-11-16T10:02:00.000Z"
+                    }
+                  ],
+                  "page": 1,
+                  "pageSize": 20,
+                  "total": 2,
+                  "totalPages": 1
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource ou route inexistante (`not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 404,
+                    "code": "not_found",
+                    "message": "Ressource introuvable.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Corps ou paramètres invalides (`validation_failed`), détail dans `fields`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 422,
+                    "code": "validation_failed",
+                    "message": "Le formulaire contient des erreurs.",
+                    "fields": {
+                      "title": [
+                        "Le titre doit faire au moins 3 caractères."
+                      ]
+                    },
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commentaires"
+        ],
+        "summary": "Commenter un drop",
+        "description": "Ajoute un commentaire de 1 à 500 caractères.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$",
+              "description": "Identifiant numérique.",
+              "example": "42"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "content"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Commentaire créé.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Comment"
+                },
+                "example": {
+                  "id": 7,
+                  "dropId": 42,
+                  "content": "Validé !",
+                  "author": {
+                    "id": 5,
+                    "username": "yanis",
+                    "displayName": "Yanis",
+                    "avatarUrl": null
+                  },
+                  "isMine": true,
+                  "createdAt": "2026-11-16T10:02:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON illisible (`bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 400,
+                    "code": "bad_request",
+                    "message": "Requête illisible.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource ou route inexistante (`not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 404,
+                    "code": "not_found",
+                    "message": "Ressource introuvable.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Corps ou paramètres invalides (`validation_failed`), détail dans `fields`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 422,
+                    "code": "validation_failed",
+                    "message": "Le formulaire contient des erreurs.",
+                    "fields": {
+                      "title": [
+                        "Le titre doit faire au moins 3 caractères."
+                      ]
+                    },
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/comments/{id}": {
+      "delete": {
+        "tags": [
+          "Commentaires"
+        ],
+        "summary": "Supprimer un commentaire",
+        "description": "Réservé à l'auteur du commentaire.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$",
+              "description": "Identifiant numérique.",
+              "example": "42"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Commentaire supprimé."
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authentifié mais non autorisé (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 403,
+                    "code": "forbidden",
+                    "message": "Vous n'avez pas le droit d'effectuer cette action.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource ou route inexistante (`not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 404,
+                    "code": "not_found",
+                    "message": "Ressource introuvable.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/drops/{id}/report": {
+      "post": {
+        "tags": [
+          "Signalement"
+        ],
+        "summary": "Signaler un drop",
+        "description": "Idempotent par utilisateur. Quand le nombre de signalements distincts atteint `REPORT_HIDE_THRESHOLD`, le drop est masqué (404 pour tous sauf son auteur). On ne peut pas signaler son propre drop.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$",
+              "description": "Identifiant numérique.",
+              "example": "42"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "spam",
+                      "offensive",
+                      "personal_info",
+                      "other"
+                    ]
+                  },
+                  "details": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Signalement enregistré.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reported": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "reported"
+                  ]
+                },
+                "example": {
+                  "reported": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON illisible (`bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 400,
+                    "code": "bad_request",
+                    "message": "Requête illisible.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authentifié mais non autorisé (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 403,
+                    "code": "forbidden",
+                    "message": "Vous n'avez pas le droit d'effectuer cette action.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource ou route inexistante (`not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 404,
+                    "code": "not_found",
+                    "message": "Ressource introuvable.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Corps ou paramètres invalides (`validation_failed`), détail dans `fields`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 422,
+                    "code": "validation_failed",
+                    "message": "Le formulaire contient des erreurs.",
+                    "fields": {
+                      "title": [
+                        "Le titre doit faire au moins 3 caractères."
+                      ]
+                    },
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Trop de requêtes (`rate_limited`), voir `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Secondes à attendre.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 429,
+                    "code": "rate_limited",
+                    "message": "Trop de requêtes, réessayez dans quelques instants.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/reset": {
+      "post": {
+        "tags": [
+          "Admin (enseignant)"
+        ],
+        "summary": "Réinitialiser la base",
+        "description": "`all` vide la base (comptes compris) et recharge les données d'exemple. `keep-users` garde les comptes créés par les élèves, supprime leurs drops, likes, commentaires et signalements, puis recharge les données d'exemple. Les tokens des comptes supprimés deviennent invalides.",
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Clé de l'enseignant.",
+              "example": "cle-enseignant"
+            },
+            "required": true,
+            "name": "X-Admin-Key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm": {
+                    "type": "string",
+                    "enum": [
+                      "RESET"
+                    ]
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "all",
+                      "keep-users"
+                    ]
+                  }
+                },
+                "required": [
+                  "confirm",
+                  "mode"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Base réinitialisée, effectifs après rechargement.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetResult"
+                },
+                "example": {
+                  "users": 13,
+                  "drops": 60,
+                  "comments": 85,
+                  "likes": 210
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON illisible (`bad_request`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 400,
+                    "code": "bad_request",
+                    "message": "Requête illisible.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authentifié mais non autorisé (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 403,
+                    "code": "forbidden",
+                    "message": "Vous n'avez pas le droit d'effectuer cette action.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Corps ou paramètres invalides (`validation_failed`), détail dans `fields`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 422,
+                    "code": "validation_failed",
+                    "message": "Le formulaire contient des erreurs.",
+                    "fields": {
+                      "title": [
+                        "Le titre doit faire au moins 3 caractères."
+                      ]
+                    },
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/reports": {
+      "get": {
+        "tags": [
+          "Admin (enseignant)"
+        ],
+        "summary": "Drops signalés",
+        "description": "Liste des drops ayant au moins un signalement, le plus récemment signalé en premier, avec chaque signalement. `hidden` indique si le drop est masqué.",
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Clé de l'enseignant.",
+              "example": "cle-enseignant"
+            },
+            "required": true,
+            "name": "X-Admin-Key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Drops signalés.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReportedDrop"
+                  }
+                },
+                "example": [
+                  {
+                    "drop": {
+                      "id": 42,
+                      "title": "Le banc le plus calme du coin",
+                      "content": "Derrière le bâtiment, à l'ombre. Idéal pour réviser.",
+                      "category": "tip",
+                      "imageUrl": null,
+                      "location": {
+                        "lat": 47.49561,
+                        "lng": 6.80544,
+                        "precision": "exact"
+                      },
+                      "locked": false,
+                      "hidden": true,
+                      "author": {
+                        "id": 3,
+                        "username": "lea",
+                        "displayName": "Léa",
+                        "avatarUrl": null
+                      },
+                      "likesCount": 4,
+                      "commentsCount": 2,
+                      "opensCount": 0,
+                      "likedByMe": false,
+                      "openedByMe": false,
+                      "isMine": false,
+                      "createdAt": "2026-11-16T09:12:00.000Z",
+                      "updatedAt": "2026-11-16T09:12:00.000Z"
+                    },
+                    "reports": [
+                      {
+                        "id": 1,
+                        "reason": "spam",
+                        "details": null,
+                        "createdAt": "2026-11-16T11:00:00.000Z",
+                        "user": {
+                          "id": 3,
+                          "username": "lea",
+                          "displayName": "Léa",
+                          "avatarUrl": null
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "403": {
+            "description": "Authentifié mais non autorisé (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 403,
+                    "code": "forbidden",
+                    "message": "Vous n'avez pas le droit d'effectuer cette action.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/drops/{id}/unhide": {
+      "post": {
+        "tags": [
+          "Admin (enseignant)"
+        ],
+        "summary": "Réactiver un drop masqué",
+        "description": "Remet le drop en ligne et remet ses signalements à zéro.",
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$",
+              "description": "Identifiant numérique.",
+              "example": "42"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Attend ce nombre de millisecondes (0 à 10000) avant de traiter la requête.",
+              "example": "1500"
+            },
+            "required": false,
+            "name": "delay",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "400",
+                "401",
+                "403",
+                "404",
+                "409",
+                "422",
+                "429",
+                "500",
+                "503"
+              ],
+              "description": "Ne traite pas la requête et renvoie cette erreur simulée.",
+              "example": "500"
+            },
+            "required": false,
+            "name": "fail",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Clé de l'enseignant.",
+              "example": "cle-enseignant"
+            },
+            "required": true,
+            "name": "X-Admin-Key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Drop réactivé.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Drop"
+                },
+                "example": {
+                  "id": 42,
+                  "title": "Le banc le plus calme du coin",
+                  "content": "Derrière le bâtiment, à l'ombre. Idéal pour réviser.",
+                  "category": "tip",
+                  "imageUrl": null,
+                  "location": {
+                    "lat": 47.49561,
+                    "lng": 6.80544,
+                    "precision": "exact"
+                  },
+                  "locked": false,
+                  "hidden": false,
+                  "author": {
+                    "id": 3,
+                    "username": "lea",
+                    "displayName": "Léa",
+                    "avatarUrl": null
+                  },
+                  "likesCount": 4,
+                  "commentsCount": 2,
+                  "opensCount": 0,
+                  "likedByMe": false,
+                  "openedByMe": false,
+                  "isMine": false,
+                  "createdAt": "2026-11-16T09:12:00.000Z",
+                  "updatedAt": "2026-11-16T09:12:00.000Z"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authentifié mais non autorisé (`forbidden`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 403,
+                    "code": "forbidden",
+                    "message": "Vous n'avez pas le droit d'effectuer cette action.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ressource ou route inexistante (`not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 404,
+                    "code": "not_found",
+                    "message": "Ressource introuvable.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur inattendue (`internal_error`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 500,
+                    "code": "internal_error",
+                    "message": "Une erreur est survenue, réessayez plus tard.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}

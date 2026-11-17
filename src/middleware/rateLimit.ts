@@ -27,5 +27,6 @@ export function createRateLimiters(config: Config): Record<Exclude<RateClass, 'n
     read: limiter(config.rateLimit.read, userOrIpKey),
     write: limiter(config.rateLimit.write, userOrIpKey),
     auth: limiter(config.rateLimit.auth, (req) => ipKey(req)),
+    open: limiter(config.rateLimit.open, userOrIpKey),
   };
 }

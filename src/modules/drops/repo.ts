@@ -1,4 +1,5 @@
 import { type Db, foldText } from '../../db/index.js';
+import { haversineMeters } from '../../geo.js';
 import { toPublicUser } from '../users/repo.js';
 
 export interface DropRow {
@@ -35,16 +36,27 @@ const SELECT_DROP = `
   FROM drops d
   JOIN users u ON u.id = d.author_id`;
 
-export function toDrop(row: DropRow, viewerId: number | null) {
+export const approximate = (value: number): number => Math.round(value * 1000) / 1000;
+
+export function isLockedFor(row: DropRow, viewerId: number | null, lockMode: 'on' | 'off'): boolean {
+  if (lockMode !== 'on') return false;
+  if (viewerId === null) return true;
+  return row.author_id !== viewerId && row.opened_by_me !== 1;
+}
+
+export function toDrop(row: DropRow, viewerId: number | null, lockMode: 'on' | 'off' = 'off') {
   const isMine = viewerId !== null && row.author_id === viewerId;
+  const locked = isLockedFor(row, viewerId, lockMode);
   return {
     id: row.id,
     title: row.title,
-    content: row.content as string | null,
+    content: (locked ? null : row.content) as string | null,
     category: row.category,
-    imageUrl: row.image_url,
-    location: { lat: row.lat, lng: row.lng, precision: 'exact' as 'exact' | 'approx' },
-    locked: false,
+    imageUrl: locked ? null : row.image_url,
+    location: locked
+      ? { lat: approximate(row.lat), lng: approximate(row.lng), precision: 'approx' as 'exact' | 'approx' }
+      : { lat: row.lat, lng: row.lng, precision: 'exact' as 'exact' | 'approx' },
+    locked,
     hidden: isMine && row.hidden === 1,
     author: toPublicUser({ id: row.author_id, username: row.username, display_name: row.display_name, avatar_url: row.avatar_url }),
     likesCount: row.likes_count,
@@ -66,24 +78,71 @@ export function isVisibleTo(row: DropRow, viewerId: number | null): boolean {
   return row.hidden === 0 || row.author_id === viewerId;
 }
 
+export interface Near {
+  lat: number;
+  lng: number;
+  radius: number;
+}
+
+export interface Bbox {
+  minLng: number;
+  minLat: number;
+  maxLng: number;
+  maxLat: number;
+}
+
 export interface DropFilters {
   q?: string;
   category?: string;
   author?: string;
-  sort: 'recent' | 'popular';
+  sort: 'recent' | 'popular' | 'distance';
   page: number;
   pageSize: number;
+  near?: Near;
+  bbox?: Bbox;
 }
 
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
-export function listDrops(db: Db, f: DropFilters, viewerId: number | null) {
+const APPROX_MARGIN_DEG = 0.0006;
+
+function prefilterRectangle(f: DropFilters): Bbox | null {
+  if (f.near) {
+    const lat = Math.max(-89, Math.min(89, f.near.lat));
+    const dLat = f.near.radius / 111_320 + APPROX_MARGIN_DEG;
+    const dLng = f.near.radius / (111_320 * Math.cos((lat * Math.PI) / 180)) + APPROX_MARGIN_DEG;
+    return { minLat: f.near.lat - dLat, maxLat: f.near.lat + dLat, minLng: f.near.lng - dLng, maxLng: f.near.lng + dLng };
+  }
+  if (f.bbox) {
+    return {
+      minLat: f.bbox.minLat - APPROX_MARGIN_DEG,
+      maxLat: f.bbox.maxLat + APPROX_MARGIN_DEG,
+      minLng: f.bbox.minLng - APPROX_MARGIN_DEG,
+      maxLng: f.bbox.maxLng + APPROX_MARGIN_DEG,
+    };
+  }
+  return null;
+}
+
+export function effectivePosition(row: DropRow, viewerId: number | null, lockMode: 'on' | 'off') {
+  return isLockedFor(row, viewerId, lockMode)
+    ? { lat: approximate(row.lat), lng: approximate(row.lng) }
+    : { lat: row.lat, lng: row.lng };
+}
+
+export function listDrops(db: Db, f: DropFilters, viewerId: number | null, lockMode: 'on' | 'off' = 'off') {
   const where: string[] = ['d.hidden = 0'];
   const params: Record<string, unknown> = { me: viewerId ?? 0 };
   if (f.q) {
-    where.push(
-      `(fold(d.title) LIKE @q ESCAPE '\\' OR fold(d.content) LIKE @q ESCAPE '\\' OR fold(u.username) LIKE @q ESCAPE '\\')`,
-    );
+    const fields = [`fold(d.title) LIKE @q ESCAPE '\\'`, `fold(u.username) LIKE @q ESCAPE '\\'`];
+    if (lockMode === 'on') {
+      fields.push(
+        `(fold(d.content) LIKE @q ESCAPE '\\' AND (d.author_id = @me OR EXISTS (SELECT 1 FROM opens o WHERE o.drop_id = d.id AND o.user_id = @me)))`,
+      );
+    } else {
+      fields.push(`fold(d.content) LIKE @q ESCAPE '\\'`);
+    }
+    where.push(`(${fields.join(' OR ')})`);
     params.q = `%${escapeLike(foldText(f.q))}%`;
   }
   if (f.category) {
@@ -94,18 +153,47 @@ export function listDrops(db: Db, f: DropFilters, viewerId: number | null) {
     where.push('u.username = @author');
     params.author = f.author.toLowerCase();
   }
+  const rect = prefilterRectangle(f);
+  if (rect) {
+    where.push('d.lat BETWEEN @minLat AND @maxLat AND d.lng BETWEEN @minLng AND @maxLng');
+    Object.assign(params, rect);
+  }
   const clause = `WHERE ${where.join(' AND ')}`;
-  const total = (
-    db
-      .prepare(`SELECT COUNT(*) AS n FROM drops d JOIN users u ON u.id = d.author_id ${clause}`)
-      .get(params) as { n: number }
-  ).n;
   const order =
     f.sort === 'popular' ? 'likes_count DESC, d.created_at DESC, d.id DESC' : 'd.created_at DESC, d.id DESC';
-  const rows = db
-    .prepare(`${SELECT_DROP} ${clause} ORDER BY ${order} LIMIT @limit OFFSET @offset`)
-    .all({ ...params, limit: f.pageSize, offset: (f.page - 1) * f.pageSize }) as DropRow[];
-  return { rows, total };
+
+  if (!rect) {
+    const total = (
+      db
+        .prepare(`SELECT COUNT(*) AS n FROM drops d JOIN users u ON u.id = d.author_id ${clause}`)
+        .get(params) as { n: number }
+    ).n;
+    const rows = db
+      .prepare(`${SELECT_DROP} ${clause} ORDER BY ${order} LIMIT @limit OFFSET @offset`)
+      .all({ ...params, limit: f.pageSize, offset: (f.page - 1) * f.pageSize }) as DropRow[];
+    return { rows, total, distances: null as number[] | null };
+  }
+
+  const candidates = db.prepare(`${SELECT_DROP} ${clause} ORDER BY ${order}`).all(params) as DropRow[];
+  const kept: { row: DropRow; distance: number }[] = [];
+  for (const row of candidates) {
+    const pos = effectivePosition(row, viewerId, lockMode);
+    if (f.near) {
+      const distance = haversineMeters(f.near.lat, f.near.lng, pos.lat, pos.lng);
+      if (distance <= f.near.radius) kept.push({ row, distance });
+    } else if (f.bbox) {
+      const inside =
+        pos.lat >= f.bbox.minLat && pos.lat <= f.bbox.maxLat && pos.lng >= f.bbox.minLng && pos.lng <= f.bbox.maxLng;
+      if (inside) kept.push({ row, distance: 0 });
+    }
+  }
+  if (f.sort === 'distance') kept.sort((a, b) => a.distance - b.distance);
+  const slice = kept.slice((f.page - 1) * f.pageSize, f.page * f.pageSize);
+  return {
+    rows: slice.map((k) => k.row),
+    total: kept.length,
+    distances: f.near ? slice.map((k) => Math.round(k.distance)) : null,
+  };
 }
 
 export const paginate = <T>(items: T[], total: number, page: number, pageSize: number) => ({

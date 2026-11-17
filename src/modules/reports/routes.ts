@@ -44,7 +44,7 @@ export function reportRoutes() {
           }
           return false;
         })();
-        if (report) events.emit('drop:updated', toDrop(findDropRow(db, params.id, null)!, null));
+        if (report) events.emit('drop:updated', toDrop(findDropRow(db, params.id, null)!, null), db);
         return { status: 202, body: { reported: true } };
       },
     }),

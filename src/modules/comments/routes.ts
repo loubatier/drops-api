@@ -1,11 +1,12 @@
 import { events } from '../../events.js';
+import { addComment } from '../../services.js';
 import { forbidden, notFound } from '../../errors.js';
 import { z } from '../../openapi/zod.js';
 import { defineRoute } from '../../http/route.js';
 import { CommentSchema, EXAMPLES, idParams, pageExample, pageSchema, paginationQuery } from '../../schemas.js';
 import type { Db } from '../../db/index.js';
 import { findDropRow, isVisibleTo, paginate } from '../drops/repo.js';
-import { viewableDrop } from '../drops/routes.js';
+import { assertUnlocked, viewableDrop } from '../drops/routes.js';
 import { toPublicUser } from '../users/repo.js';
 
 export const CommentPageSchema = pageSchema(CommentSchema, 'CommentPage');
@@ -45,16 +46,17 @@ export function commentReadRoutes() {
       tags: ['Commentaires'],
       summary: "Commentaires d'un drop",
       description: 'Page de commentaires, du plus ancien au plus récent. 404 si le drop n\'existe pas ou est masqué pour l\'appelant.',
-      access: 'optional',
+      access: 'auth',
       params: idParams,
       query: paginationQuery,
       responses: {
         200: { description: 'Page de commentaires.', schema: CommentPageSchema, example: pageExample(EXAMPLES.comment, 2) },
       },
-      handler: ({ params, query, db, user }) => {
+      handler: ({ params, query, db, user, settings }) => {
         const viewerId = user?.id ?? null;
         const drop = findDropRow(db, params.id, viewerId);
         if (!drop || !isVisibleTo(drop, viewerId)) throw notFound('Drop introuvable.');
+        assertUnlocked(drop, viewerId, settings.lockMode());
         const total = (db.prepare('SELECT COUNT(*) AS n FROM comments WHERE drop_id = ?').get(params.id) as { n: number }).n;
         const rows = db
           .prepare(`${SELECT_COMMENT} WHERE c.drop_id = ? ORDER BY c.created_at ASC, c.id ASC LIMIT ? OFFSET ?`)
@@ -83,17 +85,10 @@ export function commentWriteRoutes() {
       responses: {
         201: { description: 'Commentaire créé.', schema: CommentSchema, example: { ...EXAMPLES.comment, isMine: true } },
       },
-      guard: ({ params, db, user }) => {
-        viewableDrop(db, params.id, user!.id);
+      guard: ({ params, db, user, settings }) => {
+        assertUnlocked(viewableDrop(db, params.id, user!.id), user!.id, settings.lockMode());
       },
-      handler: ({ params, body, db, user }) => {
-        const info = db
-          .prepare('INSERT INTO comments (drop_id, author_id, content, created_at) VALUES (?, ?, ?, ?)')
-          .run(params.id, user!.id, body.content, new Date().toISOString());
-        const comment = toComment(findComment(db, Number(info.lastInsertRowid))!, user!.id);
-        events.emit('comment:created', comment);
-        return { status: 201, body: comment };
-      },
+      handler: ({ params, body, db, user }) => ({ status: 201, body: addComment(db, params.id, user!.id, body.content) }),
     }),
     defineRoute({
       method: 'delete',
@@ -111,7 +106,9 @@ export function commentWriteRoutes() {
         if (comment.author_id !== user!.id) throw forbidden("Seul l'auteur peut supprimer ce commentaire.");
       },
       handler: ({ params, db }) => {
+        const comment = findComment(db, params.id)!;
         db.prepare('DELETE FROM comments WHERE id = ?').run(params.id);
+        events.emit('comment:deleted', { dropId: comment.drop_id, commentId: comment.id }, db);
         return { status: 204 };
       },
     }),

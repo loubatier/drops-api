@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 import type { Config } from '../config.js';
 import { haversineMeters } from '../geo.js';
 import { type Db, openDb } from './index.js';
-import { COMMENTS, NOTES, PHOTOS, RIDDLES, SEED_PASSWORD, SEED_USERS, TIPS } from './seed-data.js';
+import { SEED_DROPS, SEED_PASSWORD, SEED_USERS } from './seed-data.js';
 
 const ZONE_CENTER = { lat: 47.495472, lng: 6.805279 };
 const NEAR_RADIUS_M = 800;
@@ -42,15 +42,6 @@ export interface Counts {
 export function countAll(db: Db): Counts {
   const n = (table: string) => (db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
   return { users: n('users'), drops: n('drops'), comments: n('comments'), likes: n('likes') };
-}
-
-function shuffle<T>(items: T[], rnd: () => number): T[] {
-  const a = [...items];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1));
-    [a[i], a[j]] = [a[j]!, a[i]!];
-  }
-  return a;
 }
 
 function randomPoint(rnd: () => number, near: boolean) {
@@ -95,22 +86,10 @@ export function seedDatabase(db: Db, options: SeedOptions = {}): Counts {
       userIds.set(u.username, Number(info.lastInsertRowid));
     });
 
-    const authors = SEED_USERS.filter((u) => u.hasDrops).map((u) => u.username);
-    const allUsers = SEED_USERS.map((u) => u.username);
-    const texts = shuffle(
-      [
-        ...NOTES.map((t) => ({ ...t, category: 'note' })),
-        ...PHOTOS.map((t) => ({ ...t, category: 'photo' })),
-        ...TIPS.map((t) => ({ ...t, category: 'tip' })),
-        ...RIDDLES.map((t) => ({ ...t, category: 'riddle' })),
-      ],
-      rnd,
-    );
-    const planned = texts.map((t, i) => {
+    const planned = SEED_DROPS.map((d, i) => {
       const point = randomPoint(rnd, i % 10 < 7);
       return {
-        ...t,
-        author: authors[i % authors.length]!,
+        ...d,
         lat: point.lat,
         lng: point.lng,
         createdAt: now - Math.floor(rnd() * 14 * DAY_MS) - 60_000,
@@ -122,32 +101,11 @@ export function seedDatabase(db: Db, options: SeedOptions = {}): Counts {
       `INSERT INTO drops (author_id, title, content, category, image_url, lat, lng, hidden, is_seed, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`,
     );
-    const insertLike = db.prepare('INSERT INTO likes (drop_id, user_id, created_at) VALUES (?, ?, ?)');
-    const insertComment = db.prepare(
-      'INSERT INTO comments (drop_id, author_id, content, created_at) VALUES (?, ?, ?, ?)',
-    );
 
     planned.forEach((d, index) => {
       const imageUrl = d.category === 'photo' ? `https://picsum.photos/seed/drop-${index + 1}/800/600` : null;
       const created = iso(d.createdAt);
-      const dropId = Number(
-        insertDrop.run(userIds.get(d.author)!, d.title, d.content, d.category, imageUrl, d.lat, d.lng, created, created)
-          .lastInsertRowid,
-      );
-      const span = now - d.createdAt;
-      const likeCount = Math.floor(rnd() * 9);
-      for (const username of shuffle(allUsers, rnd).slice(0, likeCount)) {
-        insertLike.run(dropId, userIds.get(username)!, iso(d.createdAt + Math.floor(rnd() * span)));
-      }
-      const commentCount = index === 0 ? 0 : Math.floor(rnd() * 5);
-      const commentTimes = Array.from({ length: commentCount }, () => d.createdAt + Math.floor(rnd() * span)).sort(
-        (a, b) => a - b,
-      );
-      for (const time of commentTimes) {
-        const author = allUsers[Math.floor(rnd() * allUsers.length)]!;
-        const text = COMMENTS[Math.floor(rnd() * COMMENTS.length)]!;
-        insertComment.run(dropId, userIds.get(author)!, text, iso(time));
-      }
+      insertDrop.run(userIds.get(d.author)!, d.title, d.content, d.category, imageUrl, d.lat, d.lng, created, created);
     });
   });
   run();

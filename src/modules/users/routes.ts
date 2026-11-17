@@ -13,7 +13,7 @@ export function userRoutes() {
       summary: "Profil d'un utilisateur",
       description:
         "Profil public avec statistiques (drops visibles, likes reçus, commentaires écrits). Les drops d'un utilisateur s'obtiennent avec `GET /drops?author=<username>`.",
-      access: 'optional',
+      access: 'auth',
       params: usernameParams,
       responses: { 200: { description: 'Profil.', schema: ProfileSchema, example: EXAMPLES.profile } },
       handler: ({ params, db }) => {
@@ -38,7 +38,7 @@ export function userRoutes() {
       tags: ['Drops'],
       summary: 'Catégories de drops',
       description: 'Les quatre catégories disponibles.',
-      access: 'public',
+      access: 'auth',
       responses: {
         200: {
           description: 'Liste des catégories.',

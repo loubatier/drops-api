@@ -3,10 +3,12 @@ dist/
 .env
 .env.*
 !.env.example
-data/
+data/*
+!data/points.json
 *.db
 *.db-shm
 *.db-wal
 coverage/
 .DS_Store
 *.log
+.vitest/
