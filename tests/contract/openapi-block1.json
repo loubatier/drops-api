@@ -691,15 +691,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -1275,15 +1267,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -1457,15 +1441,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -1517,15 +1493,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -1625,15 +1593,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -1661,15 +1621,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -1785,15 +1737,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -1821,15 +1765,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -1995,15 +1931,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -2055,15 +1983,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -2193,15 +2113,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -2249,15 +2161,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -2385,15 +2289,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -2421,15 +2317,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -2644,15 +2532,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -2704,15 +2584,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -2863,15 +2735,7 @@
               "Location": {
                 "description": "Chemin du drop créé, par exemple `/drops/42`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -2937,15 +2801,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -2997,15 +2853,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -3151,15 +2999,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -3207,15 +3047,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -3428,15 +3260,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -3528,15 +3352,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -3658,15 +3474,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -3734,15 +3542,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -3864,15 +3664,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -3920,15 +3712,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -4048,15 +3832,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -4104,15 +3880,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -4274,15 +4042,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -4354,15 +4114,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -4532,15 +4284,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -4612,15 +4356,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -4731,15 +4467,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -4807,15 +4535,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -4996,15 +4716,7 @@
               "WWW-Authenticate": {
                 "description": "Toujours `Bearer`.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },
@@ -5096,15 +4808,7 @@
               "Retry-After": {
                 "description": "Secondes à attendre.",
                 "schema": {
-                  "_def": {
-                    "checks": [],
-                    "typeName": "ZodString",
-                    "coerce": false
-                  },
-                  "~standard": {
-                    "version": 1,
-                    "vendor": "zod"
-                  }
+                  "type": "string"
                 }
               }
             },

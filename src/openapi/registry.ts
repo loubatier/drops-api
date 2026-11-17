@@ -106,15 +106,15 @@ export function buildDocument(allRoutes: AnyRoute[], flags: DocFlags = { block2:
       }
       if (r.headers) {
         entry.headers = Object.fromEntries(
-          Object.entries(r.headers).map(([name, description]) => [name, { description, schema: z.string() }]),
+          Object.entries(r.headers).map(([name, description]) => [name, { description, schema: { type: 'string' } }]),
         );
       }
       responses[status] = entry;
     }
     for (const status of errorStatusesOf(spec)) {
       const headers: Record<string, any> = {};
-      if (status === 401) headers['WWW-Authenticate'] = { description: 'Toujours `Bearer`.', schema: z.string() };
-      if (status === 429) headers['Retry-After'] = { description: 'Secondes à attendre.', schema: z.string() };
+      if (status === 401) headers['WWW-Authenticate'] = { description: 'Toujours `Bearer`.', schema: { type: 'string' } };
+      if (status === 429) headers['Retry-After'] = { description: 'Secondes à attendre.', schema: { type: 'string' } };
       responses[String(status)] = {
         description: ERROR_DESCRIPTIONS[status],
         content: { 'application/json': { schema: ErrorResponseSchema, example: errorExample(status) } },
