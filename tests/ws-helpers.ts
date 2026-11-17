@@ -4,10 +4,10 @@ import request from 'supertest';
 import { WebSocket } from 'ws';
 import { createApp } from '../src/app.js';
 import type { Config } from '../src/config.js';
-import { seedDatabase, seedPasswordHash } from '../src/db/seed.js';
+import { legacySeedPasswordHash, seedLegacyDatabase } from './fixtures/legacy-seed.js';
 import { type Db, openDb } from '../src/db/index.js';
 import type { Realtime, RealtimeOptions } from '../src/realtime/hub.js';
-import { SEED_NOW, testConfig } from './helpers.js';
+import { SEED_NOW, testConfig, withDefaultReader } from './helpers.js';
 
 export interface TestServer {
   app: ReturnType<typeof createApp>;
@@ -25,7 +25,7 @@ export async function startServer(
 ): Promise<TestServer> {
   const config = testConfig({ block2Enabled: true, ...overrides });
   const db = openDb(':memory:');
-  seedDatabase(db, { now: SEED_NOW, passwordHash: seedPasswordHash() });
+  seedLegacyDatabase(db, { now: SEED_NOW, passwordHash: legacySeedPasswordHash() });
   const app = createApp({ config, db, options: { realtime: realtimeOptions } });
   const server = http.createServer(app);
   const realtime = app.locals.realtime as Realtime;
@@ -34,7 +34,7 @@ export async function startServer(
   const { port } = server.address() as AddressInfo;
   return {
     app,
-    api: request(app),
+    api: withDefaultReader(request(app), config, db),
     db,
     config,
     realtime,

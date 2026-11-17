@@ -61,7 +61,7 @@ Nouveaux codes : 403 too_far, 403 drop_locked, 409 block2_disabled.
 
 ### Jeu de données
 
-\`GET /dataset/points\` (public, gzip, cache 24 h, sans pagination) : \`{ source, count, points[] }\`, valeurs brutes (coordonnées parfois en chaîne ou \`null\`).
+\`GET /dataset/points\` (token, gzip, cache 24 h, sans pagination) : \`{ source, count, points[] }\`, valeurs brutes (coordonnées parfois en chaîne ou \`null\`).
 \`?format=geojson\` : FeatureCollection \`[lng, lat]\` des seuls points valides, plus \`skipped\`.
 
 ### Temps réel
@@ -98,12 +98,12 @@ Doc interactive : /docs. Spécification : /openapi.json.
 ${TYPES}
 \`\`\`
 
-\`likedByMe\`, \`openedByMe\`, \`isMine\` valent \`false\` sans token. \`hidden\` n'est \`true\` que pour l'auteur.
+\`likedByMe\`, \`openedByMe\`, \`isMine\` sont calculés pour l'utilisateur du token. \`hidden\` n'est \`true\` que pour l'auteur.
 Pagination : \`?page=1\` (≥1), \`?pageSize=20\` (1 à 50). Page au-delà de la fin : 200 avec \`items: []\`.
 
 ## Routes
 
-Accès : public, token? (token facultatif), token, admin (\`X-Admin-Key\`). Format : succès | erreurs possibles.
+Accès : public, token, admin (\`X-Admin-Key\`). Format : succès | erreurs possibles.
 
 \`\`\`
 ${lines.join('\n')}
@@ -124,6 +124,6 @@ Erreurs de coordonnées (type, bornes, zone de 3 km autour du département MMI) 
 - \`?fail=<statut>\` (400, 401, 403, 404, 409, 422, 429, 500, 503) : requête non exécutée, erreur avec \`simulated: true\` et \`X-Simulated: true\`.
   \`fail=422\` met « Erreur simulée sur ce champ. » sous chaque champ du corps. \`fail=429\` ajoute \`Retry-After: 5\`.
 - \`POST /auth/login?ttl=<secondes>\` (10 à 28800) : token de courte durée.
-- Comptes de démo : \`demo\` / \`drops2026\` (autres prénoms : même mot de passe).
+- Comptes de démo : \`mathis\` / \`drops2026\` (autres prénoms : même mot de passe).
 ${flags.block2 ? BLOCK2_SECTION : ''}`;
 }

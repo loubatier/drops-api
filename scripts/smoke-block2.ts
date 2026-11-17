@@ -159,12 +159,12 @@ export async function runSmokeBlock2(
     {
       name: 'near et bbox renvoient ce drop',
       run: async () => {
-        const near = await call('GET', `/drops?near=${ZONE.lat},${ZONE.lng}&radius=200&pageSize=50`);
+        const near = await call('GET', `/drops?near=${ZONE.lat},${ZONE.lng}&radius=200&pageSize=50`, { token: b.token });
         expectStatus(near.status, 200, 'GET /drops?near');
         const hit = near.json.items.find((d: any) => d.id === dropOne);
         if (!hit || typeof hit.distanceM !== 'number') throw new Error('drop absent de near, ou distanceM manquant');
         const d = 0.002;
-        const bbox = await call('GET', `/drops?bbox=${ZONE.lng - d},${ZONE.lat - d},${ZONE.lng + d},${ZONE.lat + d}&pageSize=200`);
+        const bbox = await call('GET', `/drops?bbox=${ZONE.lng - d},${ZONE.lat - d},${ZONE.lng + d},${ZONE.lat + d}&pageSize=200`, { token: b.token });
         expectStatus(bbox.status, 200, 'GET /drops?bbox');
         if (!bbox.json.items.some((x: any) => x.id === dropOne)) throw new Error('drop absent de bbox');
       },
@@ -201,7 +201,7 @@ export async function runSmokeBlock2(
     {
       name: '/dataset/points contient plus de 1 000 points',
       run: async () => {
-        const res = await call('GET', '/dataset/points');
+        const res = await call('GET', '/dataset/points', { token: b.token });
         expectStatus(res.status, 200, 'GET /dataset/points');
         if (!(res.json.count > 1000) || res.json.points.length !== res.json.count) throw new Error('jeu de données trop petit');
       },

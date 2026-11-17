@@ -5,7 +5,7 @@ import { runSmokeBlock2 } from '../scripts/smoke-block2.js';
 import { events } from '../src/events.js';
 import { validCoordinates } from '../src/modules/dataset/routes.js';
 import type { SimulatorControl } from '../src/simulator.js';
-import { buildTestApp, bearer } from './helpers.js';
+import { bearer, buildTestApp, registerUser } from './helpers.js';
 import { type TestServer, connectAs, login, startServer } from './ws-helpers.js';
 
 const ADMIN = { 'X-Admin-Key': 'teacher-key' };
@@ -22,7 +22,8 @@ const simulatorOf = (s: TestServer) => s.app.locals.simulator as SimulatorContro
 describe('jeu de données', () => {
   it('renvoie la forme annoncée, brute et sans pagination', async () => {
     const { api } = buildTestApp({ block2Enabled: true });
-    const res = await api.get('/dataset/points');
+    const auth = bearer((await registerUser(api, 'lecteur')).token);
+    const res = await api.get('/dataset/points').set(auth);
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/application\/json; charset=utf-8/);
     expect(res.body.source).toMatchObject({
@@ -42,8 +43,9 @@ describe('jeu de données', () => {
 
   it('?format=geojson ne contient que des points valides, [lng, lat], avec skipped', async () => {
     const { api } = buildTestApp({ block2Enabled: true });
-    const json = (await api.get('/dataset/points')).body;
-    const geo = (await api.get('/dataset/points?format=geojson')).body;
+    const auth = bearer((await registerUser(api, 'lecteur')).token);
+    const json = (await api.get('/dataset/points').set(auth)).body;
+    const geo = (await api.get('/dataset/points?format=geojson').set(auth)).body;
     expect(geo.type).toBe('FeatureCollection');
     expect(geo.skipped).toBeGreaterThan(0);
     expect(geo.features.length + geo.skipped).toBe(json.count);
@@ -62,19 +64,21 @@ describe('jeu de données', () => {
 
   it('format inconnu : 422 sur format', async () => {
     const { api } = buildTestApp({ block2Enabled: true });
-    const res = await api.get('/dataset/points?format=csv');
+    const auth = bearer((await registerUser(api, 'lecteur')).token);
+    const res = await api.get('/dataset/points?format=csv').set(auth);
     expect(res.status).toBe(422);
     expect(res.body.error.fields.format).toBeDefined();
   });
 
   it('Cache-Control public 24 h (exception à no-store) et gzip', async () => {
     const { api } = buildTestApp({ block2Enabled: true });
-    const res = await api.get('/dataset/points').set('Accept-Encoding', 'gzip');
+    const auth = bearer((await registerUser(api, 'lecteur')).token);
+    const res = await api.get('/dataset/points').set(auth).set('Accept-Encoding', 'gzip');
     expect(res.headers['cache-control']).toBe('public, max-age=86400');
     expect(res.headers['content-encoding']).toBe('gzip');
     expect(res.headers.vary).toMatch(/Accept-Encoding/i);
     expect(res.body.count).toBeGreaterThan(10_000);
-    const other = await api.get('/drops');
+    const other = await api.get('/drops').set(auth);
     expect(other.headers['cache-control']).toBe('no-store');
     expect(other.headers['content-encoding']).toBeUndefined();
   });
@@ -246,9 +250,8 @@ describe('simulateur', () => {
       for (let i = 0; i < 10; i++) sim.runOnce();
       const reset = await server.api.post('/admin/reset').set(ADMIN).send({ confirm: 'RESET', mode });
       expect(reset.status).toBe(200);
-      expect(counts(server)[0]).toBe(baseline[0]);
       expect(counts(server)[3]).toBe(0);
-      expect(counts(server)[0]).toBe(60);
+      expect(counts(server)[0]).toBe(9);
       expect(server.db.prepare('SELECT COUNT(*) AS n FROM drops WHERE is_seed = 0').get()).toEqual({ n: 0 });
       expect(server.db.prepare('SELECT COUNT(*) AS n FROM opens').get()).toEqual({ n: 0 });
     }

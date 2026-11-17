@@ -435,7 +435,7 @@ describe('ouverture', () => {
     const forbidden = await server.api.get(`/drops/${mine.id}/opens`).set(bearer(other.token));
     expect(forbidden.status).toBe(403);
     expect(forbidden.body.error.code).toBe('forbidden');
-    expect((await server.api.get(`/drops/${mine.id}/opens`)).status).toBe(401);
+    expect((await server.api.get(`/drops/${mine.id}/opens`).unset('Authorization')).status).toBe(401);
     expect((await server.api.get('/drops/99999/opens').set(bearer(a.token))).status).toBe(404);
   });
 

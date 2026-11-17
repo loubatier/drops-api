@@ -157,7 +157,7 @@ export function datasetRoutes() {
         "Jeu de données ouvert (environ 15 000 bibliothèques de France) pour travailler dans un Web Worker : filtrer, regrouper et afficher des milliers de points sans bloquer l'interface. **Pas de pagination** : recevoir le jeu complet fait partie de l'exercice. Réponse compressée en gzip, mise en cache 24 h (`Cache-Control: public, max-age=86400`).\n\n" +
         "Les valeurs sont **volontairement brutes** : le serveur ne corrige rien, c'est le travail du Worker." +
         anomalyText(),
-      access: 'public',
+      access: 'auth',
       query: formatQuery,
       responses: {
         200: { description: 'Jeu de données complet (`FeatureCollection` avec `?format=geojson`).', schema: z.union([DatasetSchema, GeoJsonSchema]), example, headers: { 'Cache-Control': '`public, max-age=86400`' } },

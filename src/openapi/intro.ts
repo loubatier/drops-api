@@ -51,7 +51,7 @@ Codes : \`bad_request\` (400), \`unauthorized\`, \`invalid_token\`, \`token_expi
 - \`POST /auth/login?ttl=<secondes>\` (10 à la durée maximale) : token de courte durée pour tester l'expiration de session.
 
 ## Comptes de démo
-Tous les comptes d'exemple ont le mot de passe \`drops2026\`. Utilisez \`demo\` / \`drops2026\`, ou un autre prénom (par exemple \`lea\`), pour tester le 403 avec un deuxième compte.
+Tous les comptes d'exemple ont le mot de passe \`drops2026\`. Utilisez \`mathis\` / \`drops2026\`, ou un autre prénom (par exemple \`noah\`), pour tester le 403 avec un deuxième compte.
 `;
 
 export const BLOCK2_TAGS = [

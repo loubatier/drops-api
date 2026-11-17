@@ -32,7 +32,7 @@ Une ligne par choix non couvert par la spécification.
 - Inscription : l'identifiant et l'e-mail sont aussi comparés en minuscules ; un e-mail déjà pris renvoie 409 avec `fields.email`, les deux champs sont signalés ensemble si besoin.
 - `PATCH /auth/me` avec un corps vide renvoie 422 avec la clé `body`.
 - Profil : `dropsCount` et `likesReceived` ne comptent que les drops visibles ; `commentsCount` est le nombre de commentaires **écrits** par l'utilisateur.
-- `GET /users/{username}` est accessible avec ou sans token (token facultatif) ; `/users/me` et `/users/admin` renvoient 404 puisque ces noms sont réservés.
+- `GET /users/{username}` exige un token (voir « Accès » ci-dessous) ; `/users/me` et `/users/admin` renvoient 404 puisque ces noms sont réservés.
 - `GET /categories` figure sous le tag « Drops » ; `POST /auth/login` porte aussi le tag « Outils pédagogiques » à cause de `?ttl`.
 - Pagination : `totalPages` vaut 0 quand il n'y a aucun résultat.
 - `q` : un `q` vide ou fait d'espaces est ignoré ; `%` et `_` sont traités comme du texte ; la comparaison ignore casse et accents grâce à une fonction SQL `fold` (normalisation Unicode NFD).
@@ -113,7 +113,14 @@ Une ligne par choix non couvert par la spécification.
 - `data/points.json` est commité (exception dans `.gitignore` et `.dockerignore`) et copié dans l'image par le `Dockerfile`.
 - Simulateur : une action tirée au sort parmi like (50 %), commentaire (30 %), ouverture (15 %), création (5 %) ; si l'action tirée ne trouve pas de cible, il se rabat sur un like. Les commentaires ne visent que des drops d'utilisateurs d'exemple. Un like ou un commentaire respecte le verrouillage : l'acteur doit être l'auteur du drop ou l'avoir ouvert. Une ouverture ignore la distance (« directement par le service »). Les créations tombent dans un rayon de 2,5 km autour du centre de la zone, marquées `is_seed = 1`. Les likes, commentaires et ouvertures n'ont pas de colonne `is_seed` : ils disparaissent avec `POST /admin/reset`, qui vide ces tables entières.
 - Le simulateur s'arrête tout seul quand le bloc 2 est désactivé à chaud. `SIMULATOR_ENABLED=true` ne le démarre qu'au lancement du serveur, si le bloc 2 est activé. Les services partagés (`src/services.ts` : création de drop, like, commentaire ; `recordOpen` pour l'ouverture) servent à la fois l'API et le simulateur.
-- Le simulateur agit aussi au nom de `demo` et `lea`, qui sont des comptes d'exemple comme les autres : un élève connecté en `demo` verra donc des likes arriver sur « ses » drops.
+- Le simulateur agit aussi au nom des comptes d'exemple (`mathis`, `noah`, etc.) : un élève connecté en `mathis` verra donc des likes arriver sur « ses » drops.
 - `POST /admin/simulator` : `intervalSeconds` de 1 à 3600, corps strict. Il renvoie l'état `{ enabled, intervalSeconds }`.
 - `smoke:block2` : lit les réglages, active le bloc 2 si besoin, coupe `lockMode` pour la durée du test, puis restaure `block2Enabled` et `lockMode` d'origine et supprime les drops créés. Les deux comptes de fumée restent en base (pas d'endpoint de suppression de compte) : un `POST /admin/reset` avec `keep-users` ou `all` s'en charge. Le script avertit (sans bloquer) si l'URL ne contient pas `staging`. Il utilise `ws://` ou `wss://` selon le schéma de l'URL, sans lire l'URL renvoyée par le ticket.
 - Le test du script de fumée passe contre une instance locale : il vérifie 7 ✅ et la restauration des réglages.
+
+## Accès et comptes d'exemple (révision)
+
+- Toutes les lectures exigent désormais un token : `GET /drops`, `/drops/{id}`, `/drops/{id}/comments`, `/users/{username}`, `/categories` et `/dataset/points`. Sans token : 401 `unauthorized`. Restent publics : `/health`, `POST /auth/register`, `POST /auth/login` et la documentation. Le mode d'accès « token facultatif » n'est plus utilisé par aucune route.
+- Cette révision modifie le contrat du bloc 1 (`security`, réponse 401 de `/categories`, quelques phrases) : les références `tests/contract/*` ont été régénérées en conséquence.
+- Comptes d'exemple : `mathis`, `noah`, `ethan`, `paul`, `paolo`, `nicolas`, `ugo`, `bryan`, `tom` (mot de passe `drops2026`, e-mail `<nom>@example.com`). Un seul drop par compte, aucun like ni commentaire au départ.
+- Les tests de lecture et de temps réel utilisent l'ancien jeu riche (13 comptes, 60 drops) comme fixture dans `tests/fixtures/` ; les `GET` de ces clients de test envoient un token par défaut. Le vrai jeu est couvert par `tests/seed.test.ts`.

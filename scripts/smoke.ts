@@ -8,7 +8,7 @@ export async function runSmoke(baseUrl: string, log: (line: string) => void = co
   const suffix = randomBytes(4).toString('hex');
   const user = { username: `smoke_${suffix}`, email: `smoke_${suffix}@example.com`, password: 'smoke-password-1' };
   let token = '';
-  let demoToken = '';
+  let otherToken = '';
   let dropId = 0;
 
   const call = async (method: string, path: string, options: { body?: unknown; token?: string } = {}) => {
@@ -72,12 +72,12 @@ export async function runSmoke(baseUrl: string, log: (line: string) => void = co
       },
     },
     {
-      name: 'connexion en demo et modification refusée (403)',
+      name: 'connexion en mathis et modification refusée (403)',
       run: async () => {
-        const login = await call('POST', '/auth/login', { body: { login: 'demo', password: 'drops2026' } });
-        expectStatus(login.status, 200, 'login demo');
-        demoToken = login.json.token;
-        const patch = await call('PATCH', `/drops/${dropId}`, { token: demoToken, body: { title: 'Piraté' } });
+        const login = await call('POST', '/auth/login', { body: { login: 'mathis', password: 'drops2026' } });
+        expectStatus(login.status, 200, 'login mathis');
+        otherToken = login.json.token;
+        const patch = await call('PATCH', `/drops/${dropId}`, { token: otherToken, body: { title: 'Piraté' } });
         expectStatus(patch.status, 403, 'PATCH par un autre');
       },
     },
@@ -101,7 +101,7 @@ export async function runSmoke(baseUrl: string, log: (line: string) => void = co
       run: async () => {
         const del = await call('DELETE', `/drops/${dropId}`, { token });
         expectStatus(del.status, 204, 'DELETE /drops/:id');
-        const after = await call('GET', `/drops/${dropId}`);
+        const after = await call('GET', `/drops/${dropId}`, { token });
         expectStatus(after.status, 404, 'GET après suppression');
       },
     },

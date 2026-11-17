@@ -26,7 +26,7 @@ const listQuery = paginationQuery.extend({
       example: 'banc',
     }),
   category: z.enum(CATEGORIES, { errorMap: () => ({ message: 'Catégorie inconnue.' }) }).optional(),
-  author: z.string().trim().optional().openapi({ description: "Nom d'utilisateur de l'auteur.", example: 'lea' }),
+  author: z.string().trim().optional().openapi({ description: "Nom d'utilisateur de l'auteur.", example: 'mathis' }),
   sort: z
     .enum(['recent', 'popular'], { errorMap: () => ({ message: 'Doit valoir recent ou popular.' }) })
     .default('recent')
@@ -86,8 +86,8 @@ export function dropReadRoutes(config: Config) {
       tags: ['Drops'],
       summary: 'Lister les drops',
       description:
-        "Liste paginée des drops, du plus récent au plus ancien par défaut. Les drops masqués sont exclus. Le token est facultatif : il alimente `likedByMe` et `isMine`.",
-      access: 'optional',
+        "Liste paginée des drops, du plus récent au plus ancien par défaut. Les drops masqués sont exclus. Token requis : il alimente `likedByMe` et `isMine`.",
+      access: 'auth',
       query: (({ block2 }) => (block2 ? extended : listQuery)) as (flags: DocFlags) => z.ZodTypeAny,
       refineQuery: (query, { req, config: cfg }) => {
         const resolved = resolveGeo(
@@ -135,7 +135,7 @@ export function dropReadRoutes(config: Config) {
       summary: "Détail d'un drop",
       description:
         "404 si le drop n'existe pas, ou s'il est masqué et que l'appelant n'en est pas l'auteur. L'auteur voit son drop masqué avec `hidden: true`.",
-      access: 'optional',
+      access: 'auth',
       params: idParams,
       responses: { 200: { description: 'Drop.', schema: DropSchema, example: EXAMPLES.drop } },
       handler: ({ params, db, user, settings }) => {

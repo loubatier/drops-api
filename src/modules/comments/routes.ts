@@ -46,7 +46,7 @@ export function commentReadRoutes() {
       tags: ['Commentaires'],
       summary: "Commentaires d'un drop",
       description: 'Page de commentaires, du plus ancien au plus récent. 404 si le drop n\'existe pas ou est masqué pour l\'appelant.',
-      access: 'optional',
+      access: 'auth',
       params: idParams,
       query: paginationQuery,
       responses: {

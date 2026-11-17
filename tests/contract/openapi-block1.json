@@ -3,7 +3,7 @@
   "info": {
     "title": "Drops API",
     "version": "1.0.0",
-    "description": "\nAPI de support pour le module R505 (BUT MMI, Montbéliard). Les élèves déposent des **drops** : des messages géolocalisés qu'on peut liker et commenter.\n\n## Conventions\n- JSON uniquement, champs en camelCase, dates ISO 8601 UTC.\n- Authentification : `Authorization: Bearer <token>`. L'API ne pose aucun cookie.\n- Un token présent mais invalide, expiré ou révoqué renvoie **401 sur toutes les routes**, même publiques.\n- Corps stricts : un champ inconnu renvoie 422, et les types ne sont pas convertis (`\"47.49\"` n'est pas un nombre).\n- Chaque réponse porte `X-Request-Id` et `Cache-Control: no-store`.\n\n## Format d'erreur\nToutes les erreurs ont la même forme. `fields` est toujours présent (objet vide hors erreur de champ), `simulated` vaut `true` pour les erreurs provoquées par `?fail=`.\n\n```json\n{\n  \"error\": {\n    \"status\": 422,\n    \"code\": \"validation_failed\",\n    \"message\": \"Le formulaire contient des erreurs.\",\n    \"fields\": { \"title\": [\"Le titre doit faire au moins 3 caractères.\"] },\n    \"requestId\": \"req_8f2c1a3b\",\n    \"simulated\": false\n  }\n}\n```\n\nCodes : `bad_request` (400), `unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials` (401), `forbidden` (403), `not_found` (404), `conflict` (409), `validation_failed` (422), `rate_limited` (429), `internal_error` (500), `service_unavailable` (503).\n\n## Outils pédagogiques\n- `?delay=<ms>` (0 à 10000) : attend avant de traiter la requête.\n- `?fail=<statut>` (400, 401, 403, 404, 409, 422, 429, 500, 503) : la requête n'est pas exécutée, l'API renvoie l'erreur correspondante avec `simulated: true` et l'en-tête `X-Simulated: true`. Avec `fail=422`, chaque champ du corps reçoit « Erreur simulée sur ce champ. ». Avec `fail=429`, `Retry-After: 5`.\n- Les deux se combinent : `?delay=2000&fail=500`. Une valeur invalide renvoie un vrai 422.\n- `POST /auth/login?ttl=<secondes>` (10 à la durée maximale) : token de courte durée pour tester l'expiration de session.\n\n## Comptes de démo\nTous les comptes d'exemple ont le mot de passe `drops2026`. Utilisez `demo` / `drops2026`, ou un autre prénom (par exemple `lea`), pour tester le 403 avec un deuxième compte.\n"
+    "description": "\nAPI de support pour le module R505 (BUT MMI, Montbéliard). Les élèves déposent des **drops** : des messages géolocalisés qu'on peut liker et commenter.\n\n## Conventions\n- JSON uniquement, champs en camelCase, dates ISO 8601 UTC.\n- Authentification : `Authorization: Bearer <token>`. L'API ne pose aucun cookie.\n- Un token présent mais invalide, expiré ou révoqué renvoie **401 sur toutes les routes**, même publiques.\n- Corps stricts : un champ inconnu renvoie 422, et les types ne sont pas convertis (`\"47.49\"` n'est pas un nombre).\n- Chaque réponse porte `X-Request-Id` et `Cache-Control: no-store`.\n\n## Format d'erreur\nToutes les erreurs ont la même forme. `fields` est toujours présent (objet vide hors erreur de champ), `simulated` vaut `true` pour les erreurs provoquées par `?fail=`.\n\n```json\n{\n  \"error\": {\n    \"status\": 422,\n    \"code\": \"validation_failed\",\n    \"message\": \"Le formulaire contient des erreurs.\",\n    \"fields\": { \"title\": [\"Le titre doit faire au moins 3 caractères.\"] },\n    \"requestId\": \"req_8f2c1a3b\",\n    \"simulated\": false\n  }\n}\n```\n\nCodes : `bad_request` (400), `unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials` (401), `forbidden` (403), `not_found` (404), `conflict` (409), `validation_failed` (422), `rate_limited` (429), `internal_error` (500), `service_unavailable` (503).\n\n## Outils pédagogiques\n- `?delay=<ms>` (0 à 10000) : attend avant de traiter la requête.\n- `?fail=<statut>` (400, 401, 403, 404, 409, 422, 429, 500, 503) : la requête n'est pas exécutée, l'API renvoie l'erreur correspondante avec `simulated: true` et l'en-tête `X-Simulated: true`. Avec `fail=422`, chaque champ du corps reçoit « Erreur simulée sur ce champ. ». Avec `fail=429`, `Retry-After: 5`.\n- Les deux se combinent : `?delay=2000&fail=500`. Une valeur invalide renvoie un vrai 422.\n- `POST /auth/login?ttl=<secondes>` (10 à la durée maximale) : token de courte durée pour tester l'expiration de session.\n\n## Comptes de démo\nTous les comptes d'exemple ont le mot de passe `drops2026`. Utilisez `mathis` / `drops2026`, ou un autre prénom (par exemple `noah`), pour tester le 403 avec un deuxième compte.\n"
   },
   "tags": [
     {
@@ -2116,7 +2116,6 @@
         "summary": "Profil d'un utilisateur",
         "description": "Profil public avec statistiques (drops visibles, likes reçus, commentaires écrits). Les drops d'un utilisateur s'obtiennent avec `GET /drops?author=<username>`.",
         "security": [
-          {},
           {
             "bearerAuth": []
           }
@@ -2310,7 +2309,11 @@
         ],
         "summary": "Catégories de drops",
         "description": "Les quatre catégories disponibles.",
-        "security": [],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
           {
             "schema": {
@@ -2373,6 +2376,42 @@
                     "label": "Une énigme"
                   }
                 ]
+              }
+            }
+          },
+          "401": {
+            "description": "Token absent, invalide, expiré ou révoqué (`unauthorized`, `invalid_token`, `token_expired`, `token_revoked`, `invalid_credentials`).",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "Toujours `Bearer`.",
+                "schema": {
+                  "_def": {
+                    "checks": [],
+                    "typeName": "ZodString",
+                    "coerce": false
+                  },
+                  "~standard": {
+                    "version": 1,
+                    "vendor": "zod"
+                  }
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "status": 401,
+                    "code": "unauthorized",
+                    "message": "Authentification requise.",
+                    "fields": {},
+                    "requestId": "req_8f2c1a3b",
+                    "simulated": false
+                  }
+                }
               }
             }
           },
@@ -2441,9 +2480,8 @@
           "Drops"
         ],
         "summary": "Lister les drops",
-        "description": "Liste paginée des drops, du plus récent au plus ancien par défaut. Les drops masqués sont exclus. Le token est facultatif : il alimente `likedByMe` et `isMine`.",
+        "description": "Liste paginée des drops, du plus récent au plus ancien par défaut. Les drops masqués sont exclus. Token requis : il alimente `likedByMe` et `isMine`.",
         "security": [
-          {},
           {
             "bearerAuth": []
           }
@@ -2501,7 +2539,7 @@
             "schema": {
               "type": "string",
               "description": "Nom d'utilisateur de l'auteur.",
-              "example": "lea"
+              "example": "mathis"
             },
             "required": false,
             "name": "author",
@@ -3020,7 +3058,6 @@
         "summary": "Détail d'un drop",
         "description": "404 si le drop n'existe pas, ou s'il est masqué et que l'appelant n'en est pas l'auteur. L'auteur voit son drop masqué avec `hidden: true`.",
         "security": [
-          {},
           {
             "bearerAuth": []
           }
@@ -4128,7 +4165,6 @@
         "summary": "Commentaires d'un drop",
         "description": "Page de commentaires, du plus ancien au plus récent. 404 si le drop n'existe pas ou est masqué pour l'appelant.",
         "security": [
-          {},
           {
             "bearerAuth": []
           }

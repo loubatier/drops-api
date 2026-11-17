@@ -36,12 +36,12 @@ interface ApiError {
 }
 ```
 
-`likedByMe`, `openedByMe`, `isMine` valent `false` sans token. `hidden` n'est `true` que pour l'auteur.
+`likedByMe`, `openedByMe`, `isMine` sont calculés pour l'utilisateur du token. `hidden` n'est `true` que pour l'auteur.
 Pagination : `?page=1` (≥1), `?pageSize=20` (1 à 50). Page au-delà de la fin : 200 avec `items: []`.
 
 ## Routes
 
-Accès : public, token? (token facultatif), token, admin (`X-Admin-Key`). Format : succès | erreurs possibles.
+Accès : public, token, admin (`X-Admin-Key`). Format : succès | erreurs possibles.
 
 ```
 GET    /                            public      200 | 429,500
@@ -54,16 +54,16 @@ POST   /auth/login                  public      200 | 400,401,422,429,500
 POST   /auth/logout                 token       204 | 401,429,500
 GET    /auth/me                     token       200 | 401,429,500
 PATCH  /auth/me                     token       200 | 400,401,422,429,500
-GET    /users/{username}            token?      200 | 401,404,429,500
-GET    /categories                  public      200 | 429,500
-GET    /drops                       token?      200 | 401,422,429,500
-GET    /drops/{id}                  token?      200 | 401,404,429,500
+GET    /users/{username}            token       200 | 401,404,429,500
+GET    /categories                  token       200 | 401,429,500
+GET    /drops                       token       200 | 401,422,429,500
+GET    /drops/{id}                  token       200 | 401,404,429,500
 POST   /drops                       token       201 | 400,401,422,429,500
 PATCH  /drops/{id}                  token       200 | 400,401,403,404,422,429,500
 DELETE /drops/{id}                  token|admin 204 | 401,403,404,429,500
 POST   /drops/{id}/like             token       200 | 401,404,429,500
 DELETE /drops/{id}/like             token       200 | 401,404,429,500
-GET    /drops/{id}/comments         token?      200 | 401,404,422,429,500
+GET    /drops/{id}/comments         token       200 | 401,404,422,429,500
 POST   /drops/{id}/comments         token       201 | 400,401,404,422,429,500
 DELETE /comments/{id}               token       204 | 401,403,404,429,500
 POST   /drops/{id}/report           token       202 | 400,401,403,404,422,429,500
@@ -87,4 +87,4 @@ Erreurs de coordonnées (type, bornes, zone de 3 km autour du département MMI) 
 - `?fail=<statut>` (400, 401, 403, 404, 409, 422, 429, 500, 503) : requête non exécutée, erreur avec `simulated: true` et `X-Simulated: true`.
   `fail=422` met « Erreur simulée sur ce champ. » sous chaque champ du corps. `fail=429` ajoute `Retry-After: 5`.
 - `POST /auth/login?ttl=<secondes>` (10 à 28800) : token de courte durée.
-- Comptes de démo : `demo` / `drops2026` (autres prénoms : même mot de passe).
+- Comptes de démo : `mathis` / `drops2026` (autres prénoms : même mot de passe).
