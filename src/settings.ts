@@ -1,22 +1,18 @@
 import type { Config } from './config.js';
 import type { Db } from './db/index.js';
-import { ApiError } from './errors.js';
 
 export type LockMode = 'on' | 'off';
 
 export interface SettingsPatch {
-  block2Enabled?: boolean;
   lockMode?: LockMode;
 }
 
 export interface SettingsChange {
-  block2Enabled: boolean;
   lockMode: LockMode;
-  previous: { block2Enabled: boolean; lockMode: LockMode };
+  previous: { lockMode: LockMode };
 }
 
 export interface Settings {
-  block2Enabled(): boolean;
   lockMode(): LockMode;
   update(patch: SettingsPatch): SettingsChange;
   onChange(listener: (change: SettingsChange) => void): () => void;
@@ -28,32 +24,19 @@ export function createSettings(db: Db, config: Config): Settings {
   const listeners = new Set<(change: SettingsChange) => void>();
 
   const initial = (key: string): string | undefined => (read.get(key) as { value: string } | undefined)?.value;
-  let currentBlock2 = initial('block2Enabled') === undefined ? config.block2Enabled : initial('block2Enabled') === 'true';
   const storedLockValue = initial('lockMode');
   let currentLock: LockMode = storedLockValue === 'on' || storedLockValue === 'off' ? storedLockValue : config.lockMode;
 
-  const storedLock = (): LockMode => currentLock;
-  const block2Enabled = () => currentBlock2;
-  const lockMode = (): LockMode => (currentBlock2 ? currentLock : 'off');
+  const lockMode = (): LockMode => currentLock;
 
   return {
-    block2Enabled,
     lockMode,
     update(patch) {
-      const previous = { block2Enabled: block2Enabled(), lockMode: lockMode() };
-      const nextBlock2 = patch.block2Enabled ?? previous.block2Enabled;
-      let nextLock: LockMode = patch.lockMode ?? storedLock();
-      if (patch.lockMode === 'on' && !nextBlock2) {
-        throw new ApiError(409, 'block2_disabled', 'Le bloc 2 est désactivé : activez-le avant de verrouiller les drops.');
-      }
-      if (!nextBlock2) nextLock = 'off';
-      db.transaction(() => {
-        write.run('block2Enabled', String(nextBlock2));
-        write.run('lockMode', nextLock);
-      })();
-      currentBlock2 = nextBlock2;
+      const previous = { lockMode: lockMode() };
+      const nextLock: LockMode = patch.lockMode ?? previous.lockMode;
+      write.run('lockMode', nextLock);
       currentLock = nextLock;
-      const change: SettingsChange = { block2Enabled: block2Enabled(), lockMode: lockMode(), previous };
+      const change: SettingsChange = { lockMode: nextLock, previous };
       for (const listener of listeners) listener(change);
       return change;
     },

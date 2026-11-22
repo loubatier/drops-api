@@ -65,7 +65,6 @@ export function dropGeoRoutes() {
       method: 'post',
       path: '/drops/{id}/open',
       tags: ['Géolocalisation'],
-      block2: true,
       summary: 'Ouvrir un drop',
       description:
         "Déverrouille un drop pour l'appelant s'il se trouve assez près. **Règle** : la distance entre la position envoyée et la position **exacte** du drop doit être au plus de `OPEN_RADIUS_M` (50 m) + `min(accuracy, OPEN_ACCURACY_CAP_M)` (50 m au plus de tolérance).\n\n" +
@@ -105,7 +104,6 @@ export function dropGeoRoutes() {
       method: 'get',
       path: '/drops/{id}/opens',
       tags: ['Géolocalisation'],
-      block2: true,
       summary: 'Qui a ouvert ce drop ?',
       description: "Réservé à l'auteur du drop : liste paginée de ceux qui l'ont ouvert, du plus récent au plus ancien. C'est le statut « ouvert par… ».",
       access: 'auth',

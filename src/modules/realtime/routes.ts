@@ -11,7 +11,6 @@ export function realtimeRoutes() {
       method: 'post',
       path: '/realtime/ticket',
       tags: ['Temps réel'],
-      block2: true,
       summary: 'Obtenir un ticket WebSocket',
       description:
         "Émet un ticket aléatoire, **à usage unique**, valable `WS_TICKET_TTL_SECONDS` (30 s par défaut), à passer dans l'URL du WebSocket : `wss://<domaine>/ws?ticket=wst_…`.\n\n" +

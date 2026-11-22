@@ -236,11 +236,11 @@ describe('documentation', () => {
     }
   });
 
-  it('/contract.md est du Markdown de 150 lignes au plus', async () => {
+  it('/contract.md est du Markdown de 200 lignes au plus', async () => {
     const res = await api.get('/contract.md');
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/text\/markdown; charset=utf-8/);
-    expect(res.text.split('\n').length).toBeLessThanOrEqual(150);
+    expect(res.text.split('\n').length).toBeLessThanOrEqual(200);
     expect(res.text).toContain('interface Drop');
     expect(res.text).toContain('GET    /health');
   });

@@ -1,7 +1,7 @@
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { z } from './zod.js';
 import { ERROR_DEFS, SIMULABLE_STATUSES } from '../errors.js';
-import { type AnyRoute, type DocFlags, isDocumented, queryOf, rateClassOf } from '../http/route.js';
+import { type AnyRoute, rateClassOf } from '../http/route.js';
 import { VERSION } from '../version.js';
 import { applyBlock2Additions } from './block2.js';
 import { BLOCK2_INTRO, BLOCK2_TAGS, INTRO, TAGS } from './intro.js';
@@ -76,8 +76,7 @@ const simulationQuery = z.object({
     .openapi({ description: 'Ne traite pas la requête et renvoie cette erreur simulée.', example: '500' }),
 });
 
-export function buildDocument(allRoutes: AnyRoute[], flags: DocFlags = { block2: false }) {
-  const routes = allRoutes.filter((r) => isDocumented(r, flags));
+export function buildDocument(routes: AnyRoute[]) {
   const registry = new OpenAPIRegistry();
   registry.register('ErrorResponse', ErrorResponseSchema);
   registry.registerComponent('securitySchemes', 'bearerAuth', {
@@ -122,8 +121,7 @@ export function buildDocument(allRoutes: AnyRoute[], flags: DocFlags = { block2:
       };
     }
 
-    const specQuery = queryOf(spec, flags);
-    const query = specQuery ? (specQuery as any).merge(simulationQuery) : simulationQuery;
+    const query = spec.query ? (spec.query as any).merge(simulationQuery) : simulationQuery;
     const security: Record<string, string[]>[] =
       spec.access === 'auth'
         ? [{ bearerAuth: [] }]
@@ -171,8 +169,8 @@ export function buildDocument(allRoutes: AnyRoute[], flags: DocFlags = { block2:
 
   const document = new OpenApiGeneratorV31(registry.definitions).generateDocument({
     openapi: '3.1.0',
-    info: { title: 'Drops API', version: VERSION, description: flags.block2 ? INTRO + BLOCK2_INTRO : INTRO },
-    tags: flags.block2 ? [...TAGS, ...BLOCK2_TAGS] : TAGS,
+    info: { title: 'Drops API', version: VERSION, description: INTRO + BLOCK2_INTRO },
+    tags: [...TAGS, ...BLOCK2_TAGS],
   });
-  return flags.block2 ? applyBlock2Additions(document) : document;
+  return applyBlock2Additions(document);
 }

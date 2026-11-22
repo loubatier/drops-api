@@ -8,7 +8,6 @@ export interface Config {
   adminKey: string;
   zone: { lat: number; lng: number; radiusM: number };
   lockMode: 'off' | 'on';
-  block2Enabled: boolean;
   openRadiusM: number;
   openAccuracyCapM: number;
   bboxMaxPageSize: number;
@@ -54,7 +53,6 @@ const envSchema = z.object({
   ),
   ZONE_RADIUS_M: int(3000),
   LOCK_MODE: z.preprocess(emptyToUndefined, z.enum(['off', 'on']).default('off')),
-  BLOCK2_ENABLED: bool(false),
   OPEN_RADIUS_M: int(50),
   OPEN_ACCURACY_CAP_M: int(50, 0),
   RATE_LIMIT_OPEN_PER_MIN: int(30),
@@ -79,9 +77,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error(`Configuration invalide :\n${lines.join('\n')}`);
   }
   const e = parsed.data;
-  if (e.LOCK_MODE === 'on' && !e.BLOCK2_ENABLED) {
-    throw new Error('Configuration invalide :\n  - LOCK_MODE : refusé quand BLOCK2_ENABLED vaut false');
-  }
   const [lat, lng] = e.ZONE_CENTER.split(',').map((n) => Number(n.trim())) as [number, number];
   const commit = env.COMMIT_SHA ?? env.RAILWAY_GIT_COMMIT_SHA ?? env.SOURCE_VERSION ?? null;
   return {
@@ -92,7 +87,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     adminKey: e.ADMIN_KEY,
     zone: { lat, lng, radiusM: e.ZONE_RADIUS_M },
     lockMode: e.LOCK_MODE,
-    block2Enabled: e.BLOCK2_ENABLED,
     openRadiusM: e.OPEN_RADIUS_M,
     openAccuracyCapM: e.OPEN_ACCURACY_CAP_M,
     bboxMaxPageSize: e.BBOX_MAX_PAGE_SIZE,

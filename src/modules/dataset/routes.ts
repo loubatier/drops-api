@@ -151,7 +151,6 @@ export function datasetRoutes() {
       method: 'get',
       path: '/dataset/points',
       tags: ['Jeu de données'],
-      block2: true,
       summary: 'Jeu de données des bibliothèques',
       description:
         "Jeu de données ouvert (environ 15 000 bibliothèques de France) pour travailler dans un Web Worker : filtrer, regrouper et afficher des milliers de points sans bloquer l'interface. **Pas de pagination** : recevoir le jeu complet fait partie de l'exercice. Réponse compressée en gzip, mise en cache 24 h (`Cache-Control: public, max-age=86400`).\n\n" +

@@ -56,10 +56,8 @@ export interface RouteSpec<P extends ZodTypeAny, Q extends ZodTypeAny, B extends
   description: string;
   access: Access;
   rate?: RateClass;
-  block2?: boolean;
-  documentedOnlyWithBlock2?: boolean;
   params?: P;
-  query?: Q | ((flags: DocFlags) => Q);
+  query?: Q;
   refineQuery?: (query: z.infer<Q>, ctx: { req: Request; config: Config; settings: Settings }) => z.infer<Q>;
   body?: B;
   responses: Record<number, ResponseSpec>;
@@ -69,19 +67,6 @@ export interface RouteSpec<P extends ZodTypeAny, Q extends ZodTypeAny, B extends
 }
 
 export type AnyRoute = RouteSpec<any, any, any>;
-
-export interface DocFlags {
-  block2: boolean;
-}
-
-export function queryOf(spec: AnyRoute, flags: DocFlags): ZodTypeAny | undefined {
-  return typeof spec.query === 'function' ? spec.query(flags) : spec.query;
-}
-
-export function isDocumented(spec: AnyRoute, flags: DocFlags): boolean {
-  if (flags.block2) return true;
-  return !spec.block2 && !spec.documentedOnlyWithBlock2;
-}
 
 export function defineRoute<P extends ZodTypeAny, Q extends ZodTypeAny, B extends ZodTypeAny>(
   spec: RouteSpec<P, Q, B>,
@@ -126,9 +111,9 @@ export function mountRoutes(router: Router, routes: AnyRoute[], deps: MountDeps)
           realtime: deps.realtime,
         };
         spec.guard?.(base);
-        const querySchema = queryOf(spec, { block2: deps.settings.block2Enabled() });
+        const querySchema = spec.query;
         let query = querySchema ? validate(querySchema, req.query) : req.query;
-        if (querySchema && spec.refineQuery && deps.settings.block2Enabled()) {
+        if (querySchema && spec.refineQuery) {
           query = spec.refineQuery(query, { req, config: deps.config, settings: deps.settings });
         }
         const body = spec.body ? validate(spec.body, req.body ?? {}, true) : undefined;

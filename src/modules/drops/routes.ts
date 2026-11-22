@@ -5,7 +5,7 @@ import { events } from '../../events.js';
 import { createDrop } from '../../services.js';
 import { dropLocked, forbidden, notFound, tooFar, validationFailed } from '../../errors.js';
 import { haversineMeters } from '../../geo.js';
-import { type DocFlags, defineRoute } from '../../http/route.js';
+import { defineRoute } from '../../http/route.js';
 import { z } from '../../openapi/zod.js';
 import { CATEGORIES, DropSchema, EXAMPLES, idParams, intQuery, pageExample, pageSchema, paginationQuery } from '../../schemas.js';
 import { latField, lngField } from './schemas.js';
@@ -78,7 +78,6 @@ const extendedListQuery = (bboxMaxPageSize: number) =>
   });
 
 export function dropReadRoutes(config: Config) {
-  const extended = extendedListQuery(config.bboxMaxPageSize);
   return [
     defineRoute({
       method: 'get',
@@ -88,7 +87,7 @@ export function dropReadRoutes(config: Config) {
       description:
         "Liste paginée des drops, du plus récent au plus ancien par défaut. Les drops masqués sont exclus. Token requis : il alimente `likedByMe` et `isMine`.",
       access: 'auth',
-      query: (({ block2 }) => (block2 ? extended : listQuery)) as (flags: DocFlags) => z.ZodTypeAny,
+      query: extendedListQuery(config.bboxMaxPageSize) as z.ZodTypeAny,
       refineQuery: (query, { req, config: cfg }) => {
         const resolved = resolveGeo(
           {

@@ -20,42 +20,17 @@ afterEach(async () => {
   server = null;
 });
 
-describe('bloc 2 désactivé', () => {
-  it('les nouvelles routes renvoient 404, même sans token', async () => {
+describe('réglages et documentation', () => {
+  it('/admin/settings se lit et se modifie', async () => {
     const { api } = buildTestApp();
-    for (const [method, path] of [
-      ['post', '/realtime/ticket'],
-      ['get', '/admin/realtime'],
-      ['post', '/admin/realtime/disconnect-all'],
-      ['post', '/admin/simulator'],
-    ] as const) {
-      const res = await api[method](path).set(ADMIN);
-      expect(res.status, path).toBe(404);
-      expect(res.body.error.code).toBe('not_found');
-    }
-  });
-
-  it('/ws refuse le handshake', async () => {
-    server = await startServer({ block2Enabled: false });
-    const res = await handshake(server, '?ticket=wst_x');
-    expect(res.status).toBe(404);
-    expect(res.body.error.code).toBe('not_found');
-  });
-
-  it('/admin/settings fonctionne et refuse le verrouillage tant que le bloc 2 est désactivé', async () => {
-    const { api } = buildTestApp({ block2Enabled: false });
     const read = await api.get('/admin/settings').set(ADMIN);
     expect(read.body).toEqual({
-      block2Enabled: false,
       lockMode: 'off',
       simulator: { enabled: false, intervalSeconds: 20, presence: true },
     });
     const locked = await api.patch('/admin/settings').set(ADMIN).send({ lockMode: 'on' });
-    expect(locked.status).toBe(409);
-    expect(locked.body.error.code).toBe('block2_disabled');
-    const enabled = await api.patch('/admin/settings').set(ADMIN).send({ block2Enabled: true, lockMode: 'on' });
-    expect(enabled.status).toBe(200);
-    expect(enabled.body).toMatchObject({ block2Enabled: true, lockMode: 'on' });
+    expect(locked.status).toBe(200);
+    expect(locked.body).toMatchObject({ lockMode: 'on' });
   });
 
   it('/admin/settings exige la clé admin et refuse les champs inconnus', async () => {
@@ -67,30 +42,14 @@ describe('bloc 2 désactivé', () => {
     expect((await api.patch('/admin/settings').set(ADMIN).send({})).status).toBe(422);
   });
 
-  it('activer le bloc 2 à chaud rend les routes et la doc visibles, le désactiver les cache', async () => {
-    const { api } = buildTestApp({ block2Enabled: false });
-    const before = (await api.get('/openapi.json')).body;
-    expect(before.paths['/realtime/ticket']).toBeUndefined();
-    expect(before.paths['/admin/settings']).toBeUndefined();
-    await api.patch('/admin/settings').set(ADMIN).send({ block2Enabled: true });
-    const during = (await api.get('/openapi.json')).body;
-    expect(during.paths['/realtime/ticket']).toBeDefined();
-    expect(during.paths['/admin/settings']).toBeDefined();
-    expect(during.tags.map((t: any) => t.name)).toContain('Temps réel');
-    expect((await api.get('/contract.md')).text).toContain('## Bloc 2');
-    await api.patch('/admin/settings').set(ADMIN).send({ block2Enabled: false });
-    expect((await api.get('/openapi.json')).body).toEqual(before);
-    expect((await api.get('/contract.md')).text).not.toContain('## Bloc 2');
-  });
-
-  it('chaque route du bloc 2 figure dans /openapi.json une fois activé', async () => {
-    const { api, app } = buildTestApp({ block2Enabled: true });
+  it('chaque route figure dans /openapi.json', async () => {
+    const { api, app } = buildTestApp();
     const doc = (await api.get('/openapi.json')).body;
     const documented = new Set<string>();
     for (const [path, ops] of Object.entries<any>(doc.paths)) {
       for (const method of Object.keys(ops)) documented.add(`${method} ${path}`);
     }
-    const routers = [app.locals.apiRouter, ...(app.locals.block2Routers as any[])];
+    const routers = [app.locals.apiRouter];
     let count = 0;
     for (const router of routers) {
       for (const layer of router.stack) {
@@ -330,13 +289,6 @@ describe('WebSocket', () => {
     const { client, token } = await connectAs(server, 'demo');
     await server.api.post('/auth/logout').set(bearer(token));
     expect((await client.waitClosed()).code).toBe(4001);
-  });
-
-  it('ferme avec 4002 quand le bloc 2 est désactivé à chaud', async () => {
-    server = await startServer();
-    const { client } = await connectAs(server, 'demo');
-    await server.api.patch('/admin/settings').set(ADMIN).send({ block2Enabled: false });
-    expect(await client.waitClosed()).toEqual({ code: 4002, reason: 'block2_disabled' });
   });
 
   it('ferme avec 4011 sur disconnect-all', async () => {

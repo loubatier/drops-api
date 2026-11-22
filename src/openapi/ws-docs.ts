@@ -23,7 +23,7 @@ import { useEffect, useState } from 'react';
 
 type Viewer = { id: number; username: string; displayName: string; avatarUrl: string | null };
 
-const NO_RECONNECT = [4001, 4002, 4008, 4009];
+const NO_RECONNECT = [4001, 4008, 4009];
 
 export function usePresence(dropId: number) {
   const [viewers, setViewers] = useState<Viewer[]>([]);
@@ -137,7 +137,6 @@ Les drops masqués ne sont diffusés qu'à leur auteur. Un événement ne révè
 | 1000 | fermeture normale | Rien : c'est vous qui avez fermé. |
 | 1006 | coupure sans code (réseau, refus au handshake) | Redemander un ticket, puis reconnecter avec un délai croissant. |
 | 4001 | \`session_expired\` | Le JWT a expiré ou été révoqué : renvoyer vers la connexion. Ne pas reconnecter. |
-| 4002 | \`block2_disabled\` | Le bloc 2 est coupé : ne pas reconnecter. |
 | 4008 | \`rate_limited\` | Plus de 20 messages par 10 s : c'est un bug de votre code (message envoyé en boucle). Ne pas reconnecter, corriger. |
 | 4009 | \`too_many_connections\` | Plus de 5 connexions pour votre compte : une seule connexion par onglet. Ne pas reconnecter en boucle. |
 | 4010 | \`server_restart\` | Le serveur redémarre : nouveau ticket, reconnexion avec délai croissant. |

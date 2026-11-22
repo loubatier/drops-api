@@ -21,7 +21,7 @@ const simulatorOf = (s: TestServer) => s.app.locals.simulator as SimulatorContro
 
 describe('jeu de données', () => {
   it('renvoie la forme annoncée, brute et sans pagination', async () => {
-    const { api } = buildTestApp({ block2Enabled: true });
+    const { api } = buildTestApp();
     const auth = bearer((await registerUser(api, 'lecteur')).token);
     const res = await api.get('/dataset/points').set(auth);
     expect(res.status).toBe(200);
@@ -42,7 +42,7 @@ describe('jeu de données', () => {
   });
 
   it('?format=geojson ne contient que des points valides, [lng, lat], avec skipped', async () => {
-    const { api } = buildTestApp({ block2Enabled: true });
+    const { api } = buildTestApp();
     const auth = bearer((await registerUser(api, 'lecteur')).token);
     const json = (await api.get('/dataset/points').set(auth)).body;
     const geo = (await api.get('/dataset/points?format=geojson').set(auth)).body;
@@ -63,7 +63,7 @@ describe('jeu de données', () => {
   });
 
   it('format inconnu : 422 sur format', async () => {
-    const { api } = buildTestApp({ block2Enabled: true });
+    const { api } = buildTestApp();
     const auth = bearer((await registerUser(api, 'lecteur')).token);
     const res = await api.get('/dataset/points?format=csv').set(auth);
     expect(res.status).toBe(422);
@@ -71,7 +71,7 @@ describe('jeu de données', () => {
   });
 
   it('Cache-Control public 24 h (exception à no-store) et gzip', async () => {
-    const { api } = buildTestApp({ block2Enabled: true });
+    const { api } = buildTestApp();
     const auth = bearer((await registerUser(api, 'lecteur')).token);
     const res = await api.get('/dataset/points').set(auth).set('Accept-Encoding', 'gzip');
     expect(res.headers['cache-control']).toBe('public, max-age=86400');
@@ -83,21 +83,18 @@ describe('jeu de données', () => {
     expect(other.headers['content-encoding']).toBeUndefined();
   });
 
-  it('accepte ?delay et ?fail, et reste en 404 avec le bloc 2 désactivé', async () => {
-    const { api } = buildTestApp({ block2Enabled: true });
+  it('accepte ?delay et ?fail', async () => {
+    const { api } = buildTestApp();
     const failed = await api.get('/dataset/points?fail=503');
     expect(failed.status).toBe(503);
     expect(failed.headers['cache-control']).toBe('no-store');
     const started = Date.now();
     await api.get('/dataset/points?delay=300&format=geojson');
     expect(Date.now() - started).toBeGreaterThanOrEqual(280);
-    const off = buildTestApp({ block2Enabled: false });
-    const res = await off.api.get('/dataset/points');
-    expect(res.status).toBe(404);
   });
 
-  it('est documenté avec ses anomalies réelles quand le bloc 2 est activé', async () => {
-    const { api } = buildTestApp({ block2Enabled: true });
+  it('est documenté avec ses anomalies réelles', async () => {
+    const { api } = buildTestApp();
     const doc = (await api.get('/openapi.json')).body;
     const op = doc.paths['/dataset/points'].get;
     expect(op.tags).toEqual(['Jeu de données']);
@@ -276,8 +273,6 @@ describe('simulateur', () => {
 
     await server.api.post('/admin/simulator').set(ADMIN).send({ enabled: true, intervalSeconds: 1 });
     expect(sim.state().enabled).toBe(true);
-    await server.api.patch('/admin/settings').set(ADMIN).send({ block2Enabled: false });
-    expect(sim.state().enabled).toBe(false);
   });
 
   it('POST /admin/simulator : clé admin, corps strict', async () => {
@@ -293,7 +288,7 @@ describe('simulateur', () => {
 
 describe('smoke:block2', () => {
   it('passe contre une instance locale et restaure les réglages', async () => {
-    server = await startServer({ block2Enabled: false });
+    server = await startServer();
     const lines: string[] = [];
     const before = (await server.api.get('/admin/settings').set(ADMIN)).body;
     const ok = await runSmokeBlock2(`http://127.0.0.1:${server.port}`, 'teacher-key', (l) => lines.push(l));
@@ -311,7 +306,7 @@ describe('smoke:block2', () => {
     const lines: string[] = [];
     const ok = await runSmokeBlock2(`http://127.0.0.1:${server.port}/`, 'teacher-key', (l) => lines.push(l));
     expect(ok).toBe(true);
-    expect((await server.api.get('/admin/settings').set(ADMIN)).body).toMatchObject({ block2Enabled: true, lockMode: 'on' });
+    expect((await server.api.get('/admin/settings').set(ADMIN)).body).toMatchObject({ lockMode: 'on' });
     await login(server, 'demo');
   }, 30000);
 });
