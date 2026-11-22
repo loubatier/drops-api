@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { transformSync } from 'esbuild';
 import { bearer, buildTestApp } from './helpers.js';
-import { NEXT_PRESENCE_HOOK, NEXT_PRESENCE_WIDGET, NEXT_TICKET_ROUTE } from '../src/openapi/ws-docs.js';
+import {
+  NEXT_EVENT_HOOK,
+  NEXT_LIKES_WIDGET,
+  NEXT_PRESENCE_HOOK,
+  NEXT_PRESENCE_WIDGET,
+  NEXT_REALTIME_CLIENT,
+  NEXT_TICKET_ROUTE,
+} from '../src/openapi/ws-docs.js';
 import {
   type Client,
   type TestServer,
@@ -255,8 +262,18 @@ describe('/ws-docs', () => {
 
   it('les exemples Next.js sont du TypeScript valide', () => {
     transformSync(NEXT_TICKET_ROUTE, { loader: 'ts' });
+    transformSync(NEXT_REALTIME_CLIENT, { loader: 'ts' });
     transformSync(NEXT_PRESENCE_HOOK, { loader: 'tsx' });
     transformSync(NEXT_PRESENCE_WIDGET, { loader: 'tsx' });
+    transformSync(NEXT_EVENT_HOOK, { loader: 'tsx' });
+    transformSync(NEXT_LIKES_WIDGET, { loader: 'tsx' });
+  });
+
+  it("l'exemple Next.js n'ouvre qu'une seule socket, dans le client partagé", () => {
+    expect(NEXT_REALTIME_CLIENT.match(/new WebSocket/g)).toHaveLength(1);
+    for (const code of [NEXT_PRESENCE_HOOK, NEXT_PRESENCE_WIDGET, NEXT_EVENT_HOOK, NEXT_LIKES_WIDGET]) {
+      expect(code).not.toContain('new WebSocket');
+    }
   });
 
   it('chaque type de message du protocole est documenté', async () => {

@@ -17,52 +17,141 @@ export async function POST() {
   return NextResponse.json({ url: data.url });
 }`;
 
+export const NEXT_REALTIME_CLIENT = `type Listener = (data: any) => void;
+
+const NO_RECONNECT = [4001, 4008, 4009];
+const CLOSE_DELAY_MS = 1000;
+
+const listeners = new Map<string, Set<Listener>>();
+const openListeners = new Set<() => void>();
+
+let socket: WebSocket | null = null;
+let connecting = false;
+let consumers = 0;
+let attempt = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+let closeTimer: ReturnType<typeof setTimeout> | undefined;
+
+function scheduleReconnect() {
+  attempt += 1;
+  reconnectTimer = setTimeout(connect, Math.min(1000 * 2 ** attempt, 15000));
+}
+
+async function connect() {
+  reconnectTimer = undefined;
+  if (socket || connecting || consumers === 0) return;
+  connecting = true;
+  try {
+    const res = await fetch('/api/realtime/ticket', { method: 'POST' });
+    if (!res.ok) return;
+    const { url } = await res.json();
+    if (consumers === 0 || socket) return;
+    open(url);
+  } catch {
+    if (consumers > 0) scheduleReconnect();
+  } finally {
+    connecting = false;
+  }
+}
+
+function open(url: string) {
+  const ws = new WebSocket(url);
+  socket = ws;
+  ws.onopen = () => {
+    attempt = 0;
+    openListeners.forEach((listener) => listener());
+  };
+  ws.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    listeners.get(message.type)?.forEach((listener) => listener(message.data));
+  };
+  ws.onclose = (event) => {
+    if (socket === ws) socket = null;
+    if (consumers === 0 || NO_RECONNECT.includes(event.code)) return;
+    scheduleReconnect();
+  };
+}
+
+function disconnect() {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = undefined;
+  socket?.close(1000);
+  socket = null;
+}
+
+export function retain() {
+  clearTimeout(closeTimer);
+  consumers += 1;
+  if (!socket && !connecting && !reconnectTimer) connect();
+  return () => {
+    consumers -= 1;
+    if (consumers === 0) closeTimer = setTimeout(disconnect, CLOSE_DELAY_MS);
+  };
+}
+
+export function subscribe(type: string, listener: Listener) {
+  if (!listeners.has(type)) listeners.set(type, new Set());
+  listeners.get(type)!.add(listener);
+  return () => {
+    listeners.get(type)?.delete(listener);
+  };
+}
+
+export function onOpen(listener: () => void) {
+  openListeners.add(listener);
+  if (socket?.readyState === WebSocket.OPEN) listener();
+  return () => {
+    openListeners.delete(listener);
+  };
+}
+
+export function send(type: string, data: object = {}) {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, data }));
+}`;
+
+export const NEXT_EVENT_HOOK = `'use client';
+
+import { useEffect, useRef } from 'react';
+import { retain, subscribe } from '@/lib/realtime';
+
+export function useRealtimeEvent<T>(type: string, handler: (data: T) => void) {
+  const latest = useRef(handler);
+
+  useEffect(() => {
+    latest.current = handler;
+  });
+
+  useEffect(() => {
+    const release = retain();
+    const unsubscribe = subscribe(type, (data) => latest.current(data));
+    return () => {
+      unsubscribe();
+      release();
+    };
+  }, [type]);
+}`;
+
 export const NEXT_PRESENCE_HOOK = `'use client';
 
 import { useEffect, useState } from 'react';
+import { onOpen, retain, send, subscribe } from '@/lib/realtime';
 
 type Viewer = { id: number; username: string; displayName: string; avatarUrl: string | null };
-
-const NO_RECONNECT = [4001, 4008, 4009];
 
 export function usePresence(dropId: number) {
   const [viewers, setViewers] = useState<Viewer[]>([]);
 
   useEffect(() => {
-    let socket: WebSocket | null = null;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let attempt = 0;
-    let stopped = false;
-
-    async function connect() {
-      const res = await fetch('/api/realtime/ticket', { method: 'POST' });
-      if (stopped || !res.ok) return;
-      const { url } = await res.json();
-      if (stopped) return;
-
-      socket = new WebSocket(url);
-      socket.onopen = () => {
-        attempt = 0;
-        socket?.send(JSON.stringify({ type: 'presence:view', data: { dropId } }));
-      };
-      socket.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-        if (message.type === 'presence:drop' && message.data.dropId === dropId) {
-          setViewers(message.data.viewers);
-        }
-      };
-      socket.onclose = (event) => {
-        if (stopped || NO_RECONNECT.includes(event.code)) return;
-        attempt += 1;
-        timer = setTimeout(connect, Math.min(1000 * 2 ** attempt, 15000));
-      };
-    }
-
-    connect();
+    const release = retain();
+    const stopOpen = onOpen(() => send('presence:view', { dropId }));
+    const stopDrop = subscribe('presence:drop', (data) => {
+      if (data.dropId === dropId) setViewers(data.viewers);
+    });
     return () => {
-      stopped = true;
-      clearTimeout(timer);
-      socket?.close(1000);
+      stopDrop();
+      stopOpen();
+      send('presence:leave');
+      release();
     };
   }, [dropId]);
 
@@ -82,6 +171,21 @@ export function Viewers({ dropId }: { dropId: number }) {
         : viewers.map((v) => v.displayName).join(', ') + ' regarde ce drop.'}
     </p>
   );
+}`;
+
+export const NEXT_LIKES_WIDGET = `'use client';
+
+import { useState } from 'react';
+import { useRealtimeEvent } from '@/hooks/use-realtime-event';
+
+export function LikesCount({ dropId, initial }: { dropId: number; initial: number }) {
+  const [likes, setLikes] = useState(initial);
+
+  useRealtimeEvent<{ dropId: number; likesCount: number }>('like:updated', (data) => {
+    if (data.dropId === dropId) setLikes(data.likesCount);
+  });
+
+  return <span>{likes} likes</span>;
 }`;
 
 export function buildWsDocs(): string {
@@ -163,25 +267,58 @@ Exemple **indicatif** : adaptez les chemins et la lecture du token à votre proj
 ${NEXT_TICKET_ROUTE}
 \`\`\`
 
-### 2. Hook client
+### 2. Un client partagé, une seule connexion par onglet
 
-\`hooks/use-presence.ts\` : une connexion par composant monté, fermée au démontage (ce qui vaut \`presence:leave\`), reconnexion avec un nouveau ticket sauf pour les codes qui demandent de s'arrêter.
+\`lib/realtime.ts\` : ce module (pas un composant, pas un hook) possède **la** socket de l'onglet. Il l'ouvre quand le premier composant en a besoin, la ferme quand le dernier part, et reconnecte avec un nouveau ticket sauf pour les codes qui demandent de s'arrêter. Les composants ne créent jamais de \`WebSocket\` eux-mêmes : ils s'abonnent à des types de messages et envoient des messages à travers lui.
+
+- \`retain()\` : « j'ai besoin de la connexion ». Retourne la fonction qui la relâche. La socket se ferme 1 s après le dernier relâchement (ce délai évite de fermer puis rouvrir lors d'un changement de page ou du mode strict).
+- \`subscribe(type, listener)\` : reçoit les \`data\` de chaque message de ce type. Retourne la fonction qui se désabonne.
+- \`onOpen(listener)\` : appelé à chaque ouverture, reconnexions comprises (tout de suite si la socket est déjà ouverte). C'est là qu'on renvoie ce qui ne survit pas à une reconnexion, comme \`presence:view\`.
+- \`send(type, data)\` : envoie si la socket est ouverte, sinon ne fait rien.
+
+\`\`\`ts
+${NEXT_REALTIME_CLIENT}
+\`\`\`
+
+### 3. Hook de présence
+
+\`hooks/use-presence.ts\` : une fine couche sur le client partagé. Au démontage, \`presence:leave\` puis relâchement de la connexion.
 
 \`\`\`tsx
 ${NEXT_PRESENCE_HOOK}
 \`\`\`
 
-### 3. Composant
+### 4. Composant
 
 \`\`\`tsx
 ${NEXT_PRESENCE_WIDGET}
 \`\`\`
 
+### 5. Les autres événements : le même client
+
+Pour tout autre message du serveur (\`like:updated\`, \`comment:created\`, \`drop:created\`, \`notification\`…), un seul hook générique suffit. Il ne rouvre aucune connexion : il réutilise celle de la présence, ou ouvre la seule de l'onglet si rien d'autre n'est monté.
+
+\`hooks/use-realtime-event.ts\` :
+
+\`\`\`tsx
+${NEXT_EVENT_HOOK}
+\`\`\`
+
+Exemple, un compteur de likes en direct :
+
+\`\`\`tsx
+${NEXT_LIKES_WIDGET}
+\`\`\`
+
+Pour envoyer un message du client, importez \`send\` depuis \`@/lib/realtime\`. Pour un nouveau type de message, il n'y a rien à changer dans le client : seuls les hooks au-dessus sont à écrire.
+
 ### Pièges fréquents
 
-- **Une socket à chaque rendu.** Ouvrez la connexion dans un \`useEffect\`, jamais dans le corps du composant, et fermez-la dans la fonction de nettoyage. Sinon : 4009 en quelques secondes. L'enseignant voit les connexions par utilisateur dans \`/admin/realtime\`.
+- **Une socket par composant.** Un hook qui fait \`new WebSocket\` dans son propre \`useEffect\` ouvre une connexion à chaque composant monté : présence, likes et commentaires sur la même page font déjà 3 connexions, et 4009 arrive vite (la limite est de 5 par compte). La socket appartient au module \`lib/realtime.ts\`, jamais à un composant.
+- **Une socket à chaque rendu.** Ne touchez au client que dans un \`useEffect\`, jamais dans le corps du composant, et relâchez-le dans la fonction de nettoyage. L'enseignant voit les connexions par utilisateur dans \`/admin/realtime\`.
 - **\`presence:view\` en boucle.** Un effet qui dépend d'une valeur qui change à chaque rendu envoie le message sans arrêt : fermeture en 4008.
-- **Le mode strict de React** monte les effets deux fois en développement. Le nettoyage ci-dessus ferme la première connexion : c'est normal.
+- **Un seul \`usePresence\` par page.** Le serveur retient un seul drop regardé par connexion, et le \`presence:leave\` d'un composant qui se démonte efface celui des autres. Appelez le hook une fois, au niveau de la page, et passez \`viewers\` aux composants enfants.
+- **Le mode strict de React** monte les effets deux fois en développement. Le client partagé absorbe ce double montage sans rouvrir de connexion : c'est normal.
 - **Réutiliser un ticket.** Un ticket ne sert qu'une fois. Redemandez-en un à chaque reconnexion.
 - **Le JWT dans l'URL du WebSocket.** Jamais : seul le ticket y passe.
 
