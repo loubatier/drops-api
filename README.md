@@ -23,14 +23,13 @@ L'API écoute sur http://localhost:4000 (`/docs`, `/health`, `/contract.md`).
 | `ADMIN_KEY` | obligatoire | Clé de l'enseignant (`X-Admin-Key`) |
 | `ZONE_CENTER` | `47.495472,6.805279` | Centre de la zone autorisée |
 | `ZONE_RADIUS_M` | `3000` | Rayon de la zone (mètres) |
-| `LOCK_MODE` | `off` | Bloc 2 : `on` verrouille les drops (refusé si le bloc 2 est désactivé). Modifiable à chaud |
+| `LOCK_MODE` | `off` | Bloc 2 : `on` verrouille les drops. Modifiable à chaud |
 | `ENABLE_SIMULATION` | `true` | Active `?delay=` et `?fail=` |
 | `REPORT_HIDE_THRESHOLD` | `3` | Signalements qui masquent un drop |
 | `RATE_LIMIT_READ_PER_MIN` | `600` | Lectures par minute et par clé |
 | `RATE_LIMIT_WRITE_PER_MIN` | `60` | Écritures par minute et par utilisateur |
 | `RATE_LIMIT_AUTH_PER_MIN` | `60` | Inscriptions et connexions par minute et par IP |
 | `SEED_ON_EMPTY` | `true` | Charge les données d'exemple si la base est vide |
-| `BLOCK2_ENABLED` | `false` | Bloc 2 : active routes, paramètres et documentation. Modifiable à chaud |
 | `OPEN_RADIUS_M` | `50` | Bloc 2 : rayon d'ouverture d'un drop |
 | `OPEN_ACCURACY_CAP_M` | `50` | Bloc 2 : tolérance maximale accordée pour l'imprécision GPS |
 | `RATE_LIMIT_OPEN_PER_MIN` | `30` | Bloc 2 : tentatives d'ouverture par minute et par utilisateur |
@@ -38,7 +37,7 @@ L'API écoute sur http://localhost:4000 (`/docs`, `/health`, `/contract.md`).
 | `WS_TICKET_TTL_SECONDS` | `30` | Bloc 2 : durée de validité d'un ticket WebSocket |
 | `WS_MAX_CONNECTIONS_PER_USER` | `5` | Bloc 2 : connexions WebSocket simultanées par utilisateur |
 | `WS_MESSAGES_PER_10S` | `20` | Bloc 2 : messages client par connexion et par tranche de 10 s |
-| `SIMULATOR_ENABLED` | `false` | Bloc 2 : démarre le simulateur au lancement (si le bloc 2 est activé) |
+| `SIMULATOR_ENABLED` | `false` | Bloc 2 : démarre le simulateur au lancement |
 | `SIMULATOR_INTERVAL_SECONDS` | `20` | Bloc 2 : intervalle moyen entre deux actions simulées |
 
 ## Comptes de démo
@@ -80,14 +79,14 @@ Une seule instance (SQLite, limites en mémoire). L'image s'appuie sur `node:22-
 
 ## Bloc 2 : temps réel, géolocalisation, jeu de données
 
-Le bloc 2 (`SPECS_V2.md`) est **additif et caché derrière un interrupteur** : tant que `block2Enabled` vaut `false`, ses routes répondent 404, ses paramètres sont ignorés et rien n'apparaît dans `/docs`, `/openapi.json` ni `/contract.md` (les agents IA des élèves ne le voient pas). Un test de contrat (`tests/contract/`) compare l'OpenAPI à celui du bloc 1.
+Le bloc 2 (`SPECS_V2.md`) est **additif** et toujours actif : ses routes, ses paramètres et sa documentation sont publiés dès le déploiement, sans interrupteur. Un test de contrat (`tests/contract/`) vérifie que tout le bloc 1 reste présent et inchangé dans l'OpenAPI.
 
 ### Workflow de staging
 
 1. Développer sur une branche (`v2`, ou `block2` dans la spec) : **ne jamais pousser sur `main`**, chaque push sur `main` redéploie l'API utilisée en cours.
-2. L'environnement `staging` de Railway (volume et domaine propres, `BLOCK2_ENABLED=true`) déploie cette branche. Pousser à la fin de chaque palier.
+2. L'environnement `staging` de Railway (volume et domaine propres) déploie cette branche. Pousser à la fin de chaque palier.
 3. Avant de fusionner : `npm test` vert, puis `ADMIN_KEY=… npm run smoke:block2 -- https://<staging>` vert. Ce script crée deux comptes et des drops, puis restaure les réglages et supprime les drops. **Ne jamais le lancer contre la production pendant un cours** (il avertit si l'URL ne contient pas `staging`).
-4. Fusionner dans `main` **le soir**, jamais pendant un cours (un redéploiement coupe l'API environ une minute). Vérifier que la production a toujours `block2Enabled=false` (`GET /admin/settings`) puis relancer `npm run smoke`.
+4. Fusionner dans `main` **le soir**, jamais pendant un cours (un redéploiement coupe l'API environ une minute). Relancer ensuite `npm run smoke` sur la production.
 
 ### Fenêtre de déploiement du lundi (J4)
 
@@ -96,32 +95,28 @@ Le cours a lieu de 8 h à 12 h et de 13 h à 17 h ; un redéploiement coupe l'AP
 1. Le lundi, fusionner dans `main` **entre 12 h 00 et 12 h 45**, pas pendant un cours.
 2. Avant la fusion : tests verts, `npm run smoke:block2` vert sur **staging**, et `/ws-playground` vérifiée à la main sur staging avec deux navigateurs.
 3. Après la fusion : `npm run smoke` (bloc 1) sur la production.
-4. Activer le bloc 2 à **12 h 45** (`PATCH /admin/settings {"block2Enabled":true}`), pas à 8 h.
 
 ### Page de démonstration
 
-`GET /ws-playground` (404 tant que le bloc 2 est désactivé) : un client WebSocket sans framework ni dépendance, pour montrer le protocole en direct ou vérifier le comportement de l'API sans écrire de client. Connexion (`demo` / `drops2026`), ticket avec compte à rebours, journal des trames (↑ envoyées, ↓ reçues), `ping`, `presence:view`, `presence:leave`, texte brut, réutilisation d'un ticket (refus 401), fermeture avec code et raison. Le token reste en mémoire ; la CSP (`script-src 'self'`, `connect-src 'self' wss:`) ne s'applique qu'à cette page. Elle n'apparaît pas dans `/openapi.json`.
+`GET /ws-playground` : un client WebSocket sans framework ni dépendance, pour montrer le protocole en direct ou vérifier le comportement de l'API sans écrire de client. Connexion (`demo` / `drops2026`), ticket avec compte à rebours, journal des trames (↑ envoyées, ↓ reçues), `ping`, `presence:view`, `presence:leave`, texte brut, réutilisation d'un ticket (refus 401), fermeture avec code et raison. Le token reste en mémoire ; la CSP (`script-src 'self'`, `connect-src 'self' wss:`) ne s'applique qu'à cette page. Elle n'apparaît pas dans `/openapi.json`.
 
 ### Documentation du WebSocket pour les élèves
 
-`GET /ws-docs` (404 tant que le bloc 2 est désactivé, texte brut, hors de `/openapi.json`) : tous les messages client → serveur et serveur → client, les codes de fermeture avec la conduite à tenir, les limites, un exemple Next.js (App Router : route serveur du ticket, hook `usePresence`, composant) et les pièges fréquents. Elle est construite à partir des mêmes textes que `/contract.md` et `/docs`, et liée depuis `/docs`, `/contract.md` et `/ws-playground`.
+`GET /ws-docs` (texte brut, hors de `/openapi.json`) : tous les messages client → serveur et serveur → client, les codes de fermeture avec la conduite à tenir, les limites, un exemple Next.js (App Router : route serveur du ticket, hook `usePresence`, composant) et les pièges fréquents. Elle est construite à partir des mêmes textes que `/contract.md` et `/docs`, et liée depuis `/docs`, `/contract.md` et `/ws-playground`.
 
 ### Activation à chaud
 
-Les deux réglages sont stockés en base et priment sur les variables d'environnement. Aucun redéploiement :
+`lockMode` est stocké en base et prime sur la variable d'environnement. Aucun redéploiement :
 
 ```bash
 # lire les réglages
 curl https://<domaine>/admin/settings -H "X-Admin-Key: $ADMIN_KEY"
-# lundi 8 h : activer le bloc 2
-curl -X PATCH https://<domaine>/admin/settings -H "X-Admin-Key: $ADMIN_KEY" \
-  -H "Content-Type: application/json" -d '{"block2Enabled":true}'
-# mardi 8 h : verrouiller les drops (409 block2_disabled si le bloc 2 est désactivé)
+# verrouiller les drops
 curl -X PATCH https://<domaine>/admin/settings -H "X-Admin-Key: $ADMIN_KEY" \
   -H "Content-Type: application/json" -d '{"lockMode":"on"}'
 ```
 
-`/admin/settings` fonctionne même bloc 2 désactivé, mais n'est documentée dans `/openapi.json` qu'une fois le bloc 2 activé. Désactiver le bloc 2 ferme les WebSocket (code 4002) et remet `lockMode` à `off`. Changer `lockMode` prévient tous les clients connectés (`settings:updated`).
+Changer `lockMode` prévient tous les clients connectés (`settings:updated`).
 
 ### Outils de l'enseignant
 

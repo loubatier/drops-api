@@ -5,7 +5,7 @@ const PROTECTED_READS = ['/drops', '/drops/1', '/drops/1/comments', '/users/demo
 
 describe('lectures protégées par un token', () => {
   it.each(PROTECTED_READS)('GET %s renvoie 401 unauthorized sans token', async (path) => {
-    const { api } = buildSeededApp({ block2Enabled: true });
+    const { api } = buildSeededApp();
     const res = await api.get(path).unset('Authorization');
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe('unauthorized');
@@ -13,7 +13,7 @@ describe('lectures protégées par un token', () => {
   });
 
   it.each(PROTECTED_READS)('GET %s répond 200 avec un token', async (path) => {
-    const { api } = buildSeededApp({ block2Enabled: true });
+    const { api } = buildSeededApp();
     const { token } = await loginAs(api, 'demo');
     const res = await api.get(path).set(bearer(token));
     expect(res.status).toBe(200);

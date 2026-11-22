@@ -54,7 +54,6 @@ const SimulatorStateSchema = z.object({
 
 const SettingsSchema = z
   .object({
-    block2Enabled: z.boolean(),
     lockMode: z.enum(['on', 'off']),
     simulator: SimulatorStateSchema,
   })
@@ -62,7 +61,6 @@ const SettingsSchema = z
 
 const settingsPatchBody = z
   .object({
-    block2Enabled: z.boolean().optional(),
     lockMode: z.enum(['on', 'off'], { errorMap: () => ({ message: 'Doit valoir "on" ou "off".' }) }).optional(),
   })
   .strict()
@@ -82,7 +80,6 @@ const RealtimeStatsSchema = z
 
 export function adminRoutes({ simulator }: { simulator: SimulatorControl }) {
   const settingsView = (settings: Settings) => ({
-    block2Enabled: settings.block2Enabled(),
     lockMode: settings.lockMode(),
     simulator: simulator.state(),
   });
@@ -184,17 +181,16 @@ export function adminRoutes({ simulator }: { simulator: SimulatorControl }) {
       method: 'get',
       path: '/admin/settings',
       tags: ['Admin (enseignant)'],
-      documentedOnlyWithBlock2: true,
       summary: 'Lire les réglages à chaud',
       description:
-        "Réglages modifiables sans redéploiement : `block2Enabled`, `lockMode` et l'état du simulateur. Une valeur stockée prime sur la variable d'environnement.",
+        "Réglages modifiables sans redéploiement : `lockMode` et l'état du simulateur. Une valeur stockée prime sur la variable d'environnement.",
       access: 'admin',
       rate: 'none',
       responses: {
         200: {
           description: 'Réglages courants.',
           schema: SettingsSchema,
-          example: { block2Enabled: false, lockMode: 'off', simulator: { enabled: false, intervalSeconds: 20, presence: true } },
+          example: { lockMode: 'off', simulator: { enabled: false, intervalSeconds: 20, presence: true } },
         },
       },
       handler: ({ settings }) => ({ body: settingsView(settings) }),
@@ -203,19 +199,17 @@ export function adminRoutes({ simulator }: { simulator: SimulatorControl }) {
       method: 'patch',
       path: '/admin/settings',
       tags: ['Admin (enseignant)'],
-      documentedOnlyWithBlock2: true,
       summary: 'Modifier les réglages à chaud',
       description:
-        "`block2Enabled` active ou coupe le bloc 2 (les WebSocket ouverts sont fermés avec le code 4002 à la désactivation, et `lockMode` repasse à `off`). `lockMode: \"on\"` avec le bloc 2 désactivé renvoie 409 `block2_disabled`. Un changement de `lockMode` émet `settings:updated` à tous les clients connectés.",
+        "`lockMode` verrouille ou déverrouille les drops. Un changement de `lockMode` émet `settings:updated` à tous les clients connectés.",
       access: 'admin',
       rate: 'none',
       body: settingsPatchBody,
-      errors: [409],
       responses: {
         200: {
           description: 'Réglages après modification.',
           schema: SettingsSchema,
-          example: { block2Enabled: true, lockMode: 'on', simulator: { enabled: false, intervalSeconds: 20, presence: true } },
+          example: { lockMode: 'on', simulator: { enabled: false, intervalSeconds: 20, presence: true } },
         },
       },
       handler: ({ body, settings }) => {
@@ -227,7 +221,6 @@ export function adminRoutes({ simulator }: { simulator: SimulatorControl }) {
       method: 'get',
       path: '/admin/realtime',
       tags: ['Admin (enseignant)'],
-      block2: true,
       summary: 'Connexions temps réel',
       description:
         "Nombre de connexions WebSocket, connexions par utilisateur (trié par nombre décroissant : une application qui ouvre une socket à chaque rendu se repère ici) et lecteurs par drop. Le champ `simulated` liste, sans les mélanger aux vraies connexions, les utilisateurs simulés en ligne et les drops qu'ils regardent.",
@@ -251,7 +244,6 @@ export function adminRoutes({ simulator }: { simulator: SimulatorControl }) {
       method: 'post',
       path: '/admin/realtime/disconnect-all',
       tags: ['Admin (enseignant)'],
-      block2: true,
       summary: 'Déconnecter tout le monde',
       description:
         "Ferme toutes les connexions WebSocket avec le code 4011 (`admin_disconnect`), pour tester la reconnexion des applications.",
@@ -270,7 +262,6 @@ export function adminRoutes({ simulator }: { simulator: SimulatorControl }) {
       method: 'post',
       path: '/admin/simulator',
       tags: ['Admin (enseignant)'],
-      block2: true,
       summary: 'Démarrer ou arrêter le simulateur',
       description:
         "Le simulateur agit au nom d'utilisateurs d'exemple (likes, commentaires, ouvertures, créations de drops) pour qu'un élève qui travaille seul voie des événements en direct. Tout ce qu'il crée disparaît avec `POST /admin/reset`.\n\n`presence` (vrai par défaut) fait aussi apparaître 3 utilisateurs d'exemple en ligne et venir regarder des drops, dont, une fois sur deux, un drop regardé par un vrai utilisateur. Arrêter le simulateur, ou passer `presence` à `false`, les fait tous partir.",

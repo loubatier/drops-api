@@ -241,10 +241,6 @@ export function createSimulator(
     stopPresence();
   };
 
-  settings.onChange((change) => {
-    if (!change.block2Enabled) stop();
-  });
-
   return {
     state: () => ({ enabled, intervalSeconds, presence: presenceEnabled }),
     presenceTick,

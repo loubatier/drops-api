@@ -9,9 +9,8 @@ import { type RealtimeOptions, createRealtime } from './realtime/hub.js';
 import { createSettings } from './settings.js';
 import { type SimulatorOptions, createSimulator } from './simulator.js';
 import { realtimeRoutes } from './modules/realtime/routes.js';
-import { ApiError } from './errors.js';
 import type { Db } from './db/index.js';
-import { type AnyRoute, type DocFlags, mountRoutes, rateClassOf } from './http/route.js';
+import { type AnyRoute, mountRoutes, rateClassOf } from './http/route.js';
 import { authorOrAdmin, identify, requireAdmin, requireAuth } from './middleware/auth.js';
 import { createRateLimiters } from './middleware/rateLimit.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
@@ -76,21 +75,16 @@ export function createApp({ config, db, options = {} }: AppDeps) {
   const settings = createSettings(db, config);
   const realtime = createRealtime(config, db, settings, options.realtime);
   const simulator = createSimulator(config, db, settings, { presence: realtime.simulated, ...options.simulator });
-  const flags = (): DocFlags => ({ block2: settings.block2Enabled() });
 
   const routes: AnyRoute[] = [];
   let documentCache: object | null = null;
   let contractCache: string | null = null;
   let wsDocsCache: string | null = null;
-  settings.onChange(() => {
-    documentCache = null;
-    contractCache = null;
-  });
   routes.push(
     ...systemRoutes({
       config,
-      getDocument: () => (documentCache ??= buildDocument(routes, flags())),
-      getContract: () => (contractCache ??= buildContract(routes, flags())),
+      getDocument: () => (documentCache ??= buildDocument(routes)),
+      getContract: () => (contractCache ??= buildContract(routes)),
     }),
   );
 
@@ -112,9 +106,6 @@ export function createApp({ config, db, options = {} }: AppDeps) {
   const limiters = createRateLimiters(config);
   const pre = (spec: AnyRoute): RequestHandler[] => {
     const chain: RequestHandler[] = [];
-    if (spec.block2) {
-      chain.push((_req, _res, next) => (settings.block2Enabled() ? next() : next(ApiError.of(404))));
-    }
     if (spec.access === 'admin') chain.push(requireAdmin(config));
     if (spec.access === 'auth') chain.push(requireAuth);
     if (spec.access === 'author_or_admin') chain.push(authorOrAdmin(config));
@@ -126,28 +117,19 @@ export function createApp({ config, db, options = {} }: AppDeps) {
   app.use('/dataset/points', compression());
   const deps = { config, db, settings, realtime, pre };
   const router = express.Router();
-  mountRoutes(router, routes.filter((r) => !r.block2 && !r.documentedOnlyWithBlock2), deps);
-  const alwaysRouter = express.Router();
-  mountRoutes(alwaysRouter, routes.filter((r) => r.documentedOnlyWithBlock2), deps);
-  const block2Router = express.Router();
-  mountRoutes(block2Router, routes.filter((r) => r.block2), deps);
+  mountRoutes(router, routes, deps);
   app.use('/docs/assets', express.static(swaggerUiDist.getAbsoluteFSPath(), { index: false }));
   app.use(router);
-  app.use(alwaysRouter);
-  app.use((req, res, next) => (settings.block2Enabled() ? block2Router(req, res, next) : next()));
-  const playground = (body: string, type: string): RequestHandler => (_req, res, next) => {
-    if (!settings.block2Enabled()) return next(ApiError.of(404));
+  const playground = (body: string, type: string): RequestHandler => (_req, res) => {
     res.setHeader('Content-Security-Policy', PLAYGROUND_CSP);
     res.type(type).send(body);
   };
   app.get('/ws-playground', playground(PLAYGROUND_HTML, 'text/html; charset=utf-8'));
   app.get('/ws-playground.js', playground(PLAYGROUND_JS, 'application/javascript; charset=utf-8'));
-  app.get('/ws-docs', (_req, res, next) => {
-    if (!settings.block2Enabled()) return next(ApiError.of(404));
+  app.get('/ws-docs', (_req, res) => {
     res.type('text/plain; charset=utf-8').send((wsDocsCache ??= buildWsDocs()));
   });
   app.locals.apiRouter = router;
-  app.locals.block2Routers = [alwaysRouter, block2Router];
   app.locals.routes = routes;
   app.locals.realtime = realtime;
   app.locals.settings = settings;

@@ -55,21 +55,8 @@ function compatible(ref: unknown, cur: unknown, path: string, errors: string[]):
 }
 
 describe('contrat du bloc 1', () => {
-  it('bloc 2 désactivé : OpenAPI strictement identique à la référence', async () => {
-    const { api } = buildTestApp({ block2Enabled: false });
-    const res = await api.get('/openapi.json');
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual(reference);
-  });
-
-  it('bloc 2 désactivé : contract.md identique à la référence', async () => {
-    const { api } = buildTestApp({ block2Enabled: false });
-    const res = await api.get('/contract.md');
-    expect(res.text).toBe(referenceContract);
-  });
-
-  it('bloc 2 activé : tout le bloc 1 est présent et inchangé, seuls des ajouts facultatifs sont tolérés', async () => {
-    const { api } = buildTestApp({ block2Enabled: true });
+  it('tout le bloc 1 est présent et inchangé, seuls des ajouts facultatifs sont tolérés', async () => {
+    const { api } = buildTestApp();
     const res = await api.get('/openapi.json');
     expect(res.status).toBe(200);
     const errors: string[] = [];
@@ -77,8 +64,8 @@ describe('contrat du bloc 1', () => {
     expect(errors).toEqual([]);
   });
 
-  it('bloc 2 activé : contract.md garde le contenu du bloc 1 et gagne une section « Bloc 2 »', async () => {
-    const { api } = buildTestApp({ block2Enabled: true });
+  it('contract.md garde le contenu du bloc 1 et gagne une section « Bloc 2 »', async () => {
+    const { api } = buildTestApp();
     const res = await api.get('/contract.md');
     expect(res.text).toContain('## Bloc 2');
     for (const line of referenceContract.split('\n').filter((l) => /^(GET|POST|PATCH|DELETE)\s/.test(l))) {

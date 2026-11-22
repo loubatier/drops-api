@@ -25,7 +25,7 @@ export async function startServer(
   realtimeOptions: RealtimeOptions = { presenceDebounceMs: 30 },
   simulatorOptions: SimulatorOptions = {},
 ): Promise<TestServer> {
-  const config = testConfig({ block2Enabled: true, ...overrides });
+  const config = testConfig(overrides);
   const db = openDb(':memory:');
   seedLegacyDatabase(db, { now: SEED_NOW, passwordHash: legacySeedPasswordHash() });
   const app = createApp({ config, db, options: { realtime: realtimeOptions, simulator: simulatorOptions } });

@@ -14,7 +14,6 @@ import type { Settings, SettingsChange } from '../settings.js';
 
 export const CLOSE = {
   sessionExpired: [4001, 'session_expired'],
-  block2Disabled: [4002, 'block2_disabled'],
   rateLimited: [4008, 'rate_limited'],
   tooManyConnections: [4009, 'too_many_connections'],
   serverRestart: [4010, 'server_restart'],
@@ -295,10 +294,6 @@ export function createRealtime(
         }),
       ),
       settings.onChange((change: SettingsChange) => {
-        if (change.previous.block2Enabled && !change.block2Enabled) {
-          for (const conn of [...connections]) closeConnection(conn, CLOSE.block2Disabled);
-          return;
-        }
         if (change.previous.lockMode !== change.lockMode) {
           broadcast('settings:updated', { lockMode: change.lockMode });
         }
@@ -326,7 +321,7 @@ export function createRealtime(
 
   const handleUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    if (url.pathname !== '/ws' || !settings.block2Enabled()) {
+    if (url.pathname !== '/ws') {
       return reject(socket, 404, 'Not Found', ApiError.of(404));
     }
     pruneTickets();

@@ -29,7 +29,6 @@ export const WS_PROTOCOL = `**WebSocket** (OpenAPI ne décrit pas les WebSocket,
 
 **Fermetures décidées par le serveur** (code, raison) :
 - 4001 \`session_expired\` : le JWT d'origine a expiré ou a été révoqué (vérifié toutes les 30 s).
-- 4002 \`block2_disabled\` : le bloc 2 a été désactivé.
 - 4008 \`rate_limited\` : plus de 20 messages par tranche de 10 s.
 - 4009 \`too_many_connections\` : plus de 5 connexions par utilisateur, la plus ancienne est fermée.
 - 4010 \`server_restart\` : redémarrage du serveur, reconnectez-vous.
@@ -66,5 +65,5 @@ export const PRESENCE_STEPS = `1. Côté serveur de l'application (jamais dans l
 4. En arrivant sur la page d'un drop : envoyer \`presence:view { dropId }\`, puis recevoir tout de suite \`presence:drop\` avec la liste actuelle (soi-même inclus). Les changements suivants arrivent par d'autres \`presence:drop\` (au plus un par seconde et par drop).
 5. En quittant la page : envoyer \`presence:leave\`. Fermer la connexion vaut un départ.
 6. \`viewers\` et \`online\` sont dédoublonnés par utilisateur ; \`viewers\` est dans l'ordre d'arrivée. \`error\` : \`bad_message\` (\`dropId\` invalide) ou \`drop_not_found\` (drop inexistant ou masqué).
-7. Codes de fermeture : 4001 \`session_expired\` → se reconnecter à la page de connexion ; 4002 \`block2_disabled\` → ne pas reconnecter ; 4008 \`rate_limited\` → corriger le code (messages en boucle) ; 4009 \`too_many_connections\` → une seule connexion par onglet ; 4010 \`server_restart\` et 4011 \`admin_disconnect\` → nouveau ticket puis reconnexion avec délai croissant.
+7. Codes de fermeture : 4001 \`session_expired\` → se reconnecter à la page de connexion ; 4008 \`rate_limited\` → corriger le code (messages en boucle) ; 4009 \`too_many_connections\` → une seule connexion par onglet ; 4010 \`server_restart\` et 4011 \`admin_disconnect\` → nouveau ticket puis reconnexion avec délai croissant.
 8. Pour tester : \`/ws-playground\`, et le simulateur si l'enseignant l'a activé (utilisateurs simulés en ligne qui viennent regarder les drops).`;

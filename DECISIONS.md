@@ -141,3 +141,12 @@ Source : `spec-api-drops-temps-reel-J4.md`. T0 (P3 à P5) était déjà livré.
 - **Branche** : développé sur `j4-realtime`, rien n'est poussé sur `main`.
 - **`/ws-docs`** (ajout hors spec J4, demandé par l'enseignant) : documentation du WebSocket pour les élèves, en Markdown servi en `text/plain` pour s'afficher dans le navigateur (un `text/markdown` serait téléchargé). Même règle que la page de démonstration : routes Express montées directement sur l'application, 404 tant que le bloc 2 est désactivé, absente de `/openapi.json`. Les étapes de la présence et les types viennent des mêmes constantes que `/contract.md` (`PRESENCE_STEPS`, `WS_TYPES`), pour qu'ils ne divergent pas. Exemple Next.js seulement (App Router), indicatif ; un test vérifie que son code est du TypeScript valide et que chaque type de message est documenté.
 - **Correction du contrat** : `/contract.md` affichait le texte `${WS_TYPES}` au lieu des types (antislash en trop dans `src/contract.ts`, antérieur à J4). Corrigé, avec un test.
+
+## Suppression de l'interrupteur du bloc 2
+
+- `BLOCK2_ENABLED` et le réglage `block2Enabled` n'existent plus : le bloc 2 est additif et ne casse rien du bloc 1, un interrupteur n'a donc plus d'utilité. Ses routes, `/ws`, `/ws-playground`, `/ws-docs`, `/admin/settings` et les ajouts à `/openapi.json` et `/contract.md` sont toujours actifs.
+- Disparaissent avec lui : le code d'erreur 409 `block2_disabled`, le code de fermeture WebSocket 4002, l'arrêt automatique du simulateur à la désactivation, le refus de démarrer avec `LOCK_MODE=on`, et `app.locals.block2Routers`.
+- `lockMode` reste un réglage indépendant : variable `LOCK_MODE` (défaut `off`), modifiable à chaud par `PATCH /admin/settings`, valeur stockée prioritaire.
+- Les tests « bloc 2 désactivé » sont supprimés. Le test de contrat garde la vérification que le bloc 1 reste présent et inchangé dans l'OpenAPI et le `contract.md`.
+- `/contract.md` dépasse l'ancien plafond de 150 lignes (174) : le plafond passe à 200.
+- Une ligne `block2Enabled` laissée dans la table `settings` en production est ignorée.

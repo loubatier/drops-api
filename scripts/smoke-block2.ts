@@ -75,7 +75,7 @@ export async function runSmokeBlock2(
   }));
   const [a, b] = accounts as [(typeof accounts)[number], (typeof accounts)[number]];
   const state: {
-    initial: { block2Enabled: boolean; lockMode: 'on' | 'off' } | null;
+    initial: { lockMode: 'on' | 'off' } | null;
     socketA: Socket | null;
     socketB: Socket | null;
   } = { initial: null, socketA: null, socketB: null };
@@ -127,16 +127,12 @@ export async function runSmokeBlock2(
 
   const steps: Step[] = [
     {
-      name: 'réglages lus, bloc 2 activé si besoin',
+      name: 'réglages lus, lockMode mis sur off',
       run: async () => {
         const res = await call('GET', '/admin/settings', { admin: true });
         expectStatus(res.status, 200, 'GET /admin/settings');
-        const initial = { block2Enabled: res.json.block2Enabled as boolean, lockMode: res.json.lockMode as 'on' | 'off' };
+        const initial = { lockMode: res.json.lockMode as 'on' | 'off' };
         state.initial = initial;
-        if (!initial.block2Enabled) {
-          const patch = await call('PATCH', '/admin/settings', { admin: true, body: { block2Enabled: true } });
-          expectStatus(patch.status, 200, 'PATCH /admin/settings');
-        }
         if (initial.lockMode === 'on') {
           const patch = await call('PATCH', '/admin/settings', { admin: true, body: { lockMode: 'off' } });
           expectStatus(patch.status, 200, 'PATCH lockMode off');
@@ -260,11 +256,8 @@ export async function runSmokeBlock2(
     if (initial) {
       const restore = await call('PATCH', '/admin/settings', { admin: true, body: { lockMode: 'off' } });
       expectStatus(restore.status, 200, 'restauration de lockMode');
-      if (initial.lockMode === 'on' || !initial.block2Enabled) {
-        const final = await call('PATCH', '/admin/settings', {
-          admin: true,
-          body: { block2Enabled: initial.block2Enabled, ...(initial.block2Enabled ? { lockMode: initial.lockMode } : {}) },
-        });
+      if (initial.lockMode === 'on') {
+        const final = await call('PATCH', '/admin/settings', { admin: true, body: { lockMode: 'on' } });
         expectStatus(final.status, 200, 'restauration des réglages');
       }
     }

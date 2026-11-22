@@ -187,14 +187,8 @@ describe('validation de presence:view', () => {
 });
 
 describe('page de démonstration', () => {
-  it('404 avec le bloc 2 désactivé, 200 activé, hors de /openapi.json, script autorisé par la CSP', async () => {
-    const off = buildTestApp({ block2Enabled: false });
-    for (const path of ['/ws-playground', '/ws-playground.js']) {
-      const res = await off.api.get(path);
-      expect(res.status).toBe(404);
-      expect(res.body.error.code).toBe('not_found');
-    }
-    const on = buildTestApp({ block2Enabled: true });
+  it('sert la page, hors de /openapi.json, script autorisé par la CSP', async () => {
+    const on = buildTestApp();
     const page = await on.api.get('/ws-playground');
     expect(page.status).toBe(200);
     expect(page.headers['content-type']).toMatch(/text\/html/);
@@ -213,13 +207,12 @@ describe('page de démonstration', () => {
     expect((await on.api.get('/openapi.json')).body.tags.find((t: any) => t.name === 'Temps réel').description).toContain(
       '/ws-playground',
     );
-    expect((await off.api.get('/openapi.json')).text).not.toContain('ws-playground');
   });
 });
 
 describe('contrat', () => {
   it('/contract.md contient les types WebSocket à jour, sans marqueur non résolu', async () => {
-    const { api } = buildTestApp({ block2Enabled: true });
+    const { api } = buildTestApp();
     const text = (await api.get('/contract.md')).text;
     expect(text).not.toContain('${');
     expect(text).toContain("online: PublicUser[]");
@@ -228,13 +221,8 @@ describe('contrat', () => {
 });
 
 describe('/ws-docs', () => {
-  it('404 avec le bloc 2 désactivé, texte complet activé, hors de /openapi.json', async () => {
-    const off = buildTestApp({ block2Enabled: false });
-    const hidden = await off.api.get('/ws-docs');
-    expect(hidden.status).toBe(404);
-    expect(hidden.body.error.code).toBe('not_found');
-
-    const on = buildTestApp({ block2Enabled: true });
+  it('texte complet, hors de /openapi.json', async () => {
+    const on = buildTestApp();
     const res = await on.api.get('/ws-docs');
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/text\/plain; charset=utf-8/);
@@ -257,7 +245,6 @@ describe('/ws-docs', () => {
     expect((await on.api.get('/contract.md')).text).toContain('/ws-docs');
     expect((await on.api.get('/openapi.json')).body.info.description).toContain('/ws-docs');
     expect((await on.api.get('/ws-playground')).text).toContain('/ws-docs');
-    expect((await off.api.get('/openapi.json')).text).not.toContain('ws-docs');
   });
 
   it('les exemples Next.js sont du TypeScript valide', () => {
@@ -267,7 +254,7 @@ describe('/ws-docs', () => {
   });
 
   it('chaque type de message du protocole est documenté', async () => {
-    const { api } = buildTestApp({ block2Enabled: true });
+    const { api } = buildTestApp();
     const text = (await api.get('/ws-docs')).text;
     const types = [
       'ping', 'pong', 'hello', 'presence:view', 'presence:leave', 'presence:online', 'presence:drop',
@@ -329,15 +316,14 @@ describe('présence simulée', () => {
     expect((await server.api.get('/admin/realtime').set(ADMIN)).body.simulated.viewing).toEqual([]);
   });
 
-  it('presence: false ne fait venir personne, et le désactiver à chaud retire les simulés', async () => {
+  it('presence: false ne fait venir personne, et arrêter le simulateur retire les simulés', async () => {
     server = await startServer({}, { presenceDebounceMs: 20 }, { presenceTiming: timing });
     await server.api.post('/admin/simulator').set(ADMIN).send({ enabled: true, presence: false });
     expect((await server.api.get('/admin/realtime').set(ADMIN)).body.simulated.online).toEqual([]);
     expect((await server.api.get('/admin/settings').set(ADMIN)).body.simulator.presence).toBe(false);
     await server.api.post('/admin/simulator').set(ADMIN).send({ enabled: true });
     expect((await server.api.get('/admin/realtime').set(ADMIN)).body.simulated.online).toHaveLength(3);
-    await server.api.patch('/admin/settings').set(ADMIN).send({ block2Enabled: false });
-    await server.api.patch('/admin/settings').set(ADMIN).send({ block2Enabled: true });
+    await server.api.post('/admin/simulator').set(ADMIN).send({ enabled: false });
     expect((await server.api.get('/admin/realtime').set(ADMIN)).body.simulated.online).toEqual([]);
   });
 });

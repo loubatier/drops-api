@@ -209,39 +209,6 @@ describe('recherche géographique : bbox', () => {
   });
 });
 
-describe('bloc 2 désactivé : le bloc 1 est inchangé', () => {
-  it('near, radius et bbox sont ignorés comme des paramètres inconnus', async () => {
-    server = await startServer({ block2Enabled: false });
-    const plain = await server.api.get('/drops?pageSize=50');
-    for (const query of ['near=47.4,6.8', 'near=abc', 'radius=5', 'bbox=1,2,3', 'near=1,1&bbox=1,1,2,2&radius=0']) {
-      const res = await server.api.get(`/drops?pageSize=50&${query}`);
-      expect(res.status, query).toBe(200);
-      expect(res.body).toEqual(plain.body);
-    }
-  });
-
-  it('sort=distance et pageSize > 50 restent des erreurs 422', async () => {
-    server = await startServer({ block2Enabled: false });
-    const sort = await server.api.get('/drops?sort=distance');
-    expect(sort.status).toBe(422);
-    expect(sort.body.error.fields.sort).toEqual(['Doit valoir recent ou popular.']);
-    const size = await server.api.get('/drops?bbox=6.7,47.4,6.9,47.6&pageSize=51');
-    expect(size.status).toBe(422);
-    expect(size.body.error.fields.pageSize).toEqual(['Doit être un entier entre 1 et 50.']);
-  });
-
-  it('open et opens renvoient 404 ; un drop n’est jamais verrouillé', async () => {
-    server = await startServer({ block2Enabled: false });
-    const { token } = await login(server, 'demo');
-    const open = await server.api.post('/drops/1/open').set(bearer(token)).send({ lat: 47.4, lng: 6.8 });
-    expect(open.status).toBe(404);
-    expect((await server.api.get('/drops/1/opens').set(bearer(token))).status).toBe(404);
-    const drop = (await server.api.get('/drops/1')).body;
-    expect(drop).toMatchObject({ locked: false, location: { precision: 'exact' } });
-    expect(drop.content).toBeTypeOf('string');
-  });
-});
-
 describe('ouverture', () => {
   const seedTarget = (s: TestServer, notAuthor: string) => {
     const user = s.db.prepare('SELECT id FROM users WHERE username = ?').get(notAuthor) as { id: number };
@@ -668,13 +635,5 @@ describe('documentation du bloc 2 (géolocalisation)', () => {
     expect(doc.paths['/drops'].get.description).toContain('longitude d\'abord');
     const contract = (await server.api.get('/contract.md')).text;
     expect(contract).toContain('/drops/{id}/open');
-  });
-
-  it('ne montre rien du bloc 2 quand il est désactivé', async () => {
-    server = await startServer({ block2Enabled: false });
-    const text = JSON.stringify((await server.api.get('/openapi.json')).body) + (await server.api.get('/contract.md')).text;
-    for (const word of ['near', 'bbox', 'distanceM', '/drops/{id}/open', 'WebSocket', 'drop_locked', 'too_far', '/ws']) {
-      expect(text, word).not.toContain(word);
-    }
   });
 });

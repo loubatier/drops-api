@@ -4,7 +4,6 @@ import { loadConfig } from './config.js';
 import { scheduleBackups } from './db/backup.js';
 import { openDb } from './db/index.js';
 import type { Realtime } from './realtime/hub.js';
-import type { Settings } from './settings.js';
 import type { SimulatorControl } from './simulator.js';
 import { seedIfEmpty } from './db/seed.js';
 
@@ -18,7 +17,7 @@ function main() {
   const realtime = app.locals.realtime as Realtime;
   realtime.attach(server);
   const simulator = app.locals.simulator as SimulatorControl;
-  if (config.simulatorEnabled && (app.locals.settings as Settings).block2Enabled()) simulator.configure(true);
+  if (config.simulatorEnabled) simulator.configure(true);
   server.listen(config.port, () => {
     console.log(`Drops API en écoute sur le port ${config.port}`);
   });
