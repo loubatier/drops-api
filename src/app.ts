@@ -29,6 +29,7 @@ import { systemRoutes } from './modules/health/routes.js';
 import { userRoutes } from './modules/users/routes.js';
 import { buildDocument } from './openapi/registry.js';
 import { buildWsDocs } from './openapi/ws-docs.js';
+import { WS_DOCS_CSP, buildWsDocsHtml } from './openapi/ws-docs-html.js';
 import { PLAYGROUND_CSP, PLAYGROUND_HTML, PLAYGROUND_JS } from './playground/page.js';
 
 export interface AppDeps {
@@ -79,7 +80,8 @@ export function createApp({ config, db, options = {} }: AppDeps) {
   const routes: AnyRoute[] = [];
   let documentCache: object | null = null;
   let contractCache: string | null = null;
-  let wsDocsCache: string | null = null;
+  let wsDocsHtmlCache: string | null = null;
+  let wsDocsMdCache: string | null = null;
   routes.push(
     ...systemRoutes({
       config,
@@ -127,7 +129,11 @@ export function createApp({ config, db, options = {} }: AppDeps) {
   app.get('/ws-playground', playground(PLAYGROUND_HTML, 'text/html; charset=utf-8'));
   app.get('/ws-playground.js', playground(PLAYGROUND_JS, 'application/javascript; charset=utf-8'));
   app.get('/ws-docs', (_req, res) => {
-    res.type('text/plain; charset=utf-8').send((wsDocsCache ??= buildWsDocs()));
+    res.setHeader('Content-Security-Policy', WS_DOCS_CSP);
+    res.type('text/html; charset=utf-8').send((wsDocsHtmlCache ??= buildWsDocsHtml()));
+  });
+  app.get('/ws-docs.md', (_req, res) => {
+    res.type('text/plain; charset=utf-8').send((wsDocsMdCache ??= buildWsDocs()));
   });
   app.locals.apiRouter = router;
   app.locals.routes = routes;

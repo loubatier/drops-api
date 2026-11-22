@@ -225,7 +225,13 @@ describe('/ws-docs', () => {
     const on = buildTestApp();
     const res = await on.api.get('/ws-docs');
     expect(res.status).toBe(200);
-    expect(res.headers['content-type']).toMatch(/text\/plain; charset=utf-8/);
+    expect(res.headers['content-type']).toMatch(/text\/html; charset=utf-8/);
+    expect(res.text).toContain('<table>');
+    expect(res.text).toContain('<pre><code class="language-ts">');
+    expect(res.text).not.toContain('## ');
+    const raw = await on.api.get('/ws-docs.md');
+    expect(raw.headers['content-type']).toMatch(/text\/plain; charset=utf-8/);
+    expect(raw.text).toContain('## En bref');
     for (const needle of [
       'presence:view',
       'presence:leave',
@@ -238,9 +244,9 @@ describe('/ws-docs', () => {
       'new WebSocket',
       "online: PublicUser[]",
     ]) {
-      expect(res.text, needle).toContain(needle);
+      expect(raw.text, needle).toContain(needle);
     }
-    expect(res.text).not.toContain('${');
+    expect(raw.text).not.toContain('${');
     expect(Object.keys((await on.api.get('/openapi.json')).body.paths).some((p) => p.includes('ws-docs'))).toBe(false);
     expect((await on.api.get('/contract.md')).text).toContain('/ws-docs');
     expect((await on.api.get('/openapi.json')).body.info.description).toContain('/ws-docs');
@@ -255,7 +261,7 @@ describe('/ws-docs', () => {
 
   it('chaque type de message du protocole est documenté', async () => {
     const { api } = buildTestApp();
-    const text = (await api.get('/ws-docs')).text;
+    const text = (await api.get('/ws-docs.md')).text;
     const types = [
       'ping', 'pong', 'hello', 'presence:view', 'presence:leave', 'presence:online', 'presence:drop',
       'drop:created', 'drop:updated', 'drop:deleted', 'drop:opened', 'like:updated', 'comment:created',

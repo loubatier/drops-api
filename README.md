@@ -102,7 +102,7 @@ Le cours a lieu de 8 h à 12 h et de 13 h à 17 h ; un redéploiement coupe l'AP
 
 ### Documentation du WebSocket pour les élèves
 
-`GET /ws-docs` (texte brut, hors de `/openapi.json`) : tous les messages client → serveur et serveur → client, les codes de fermeture avec la conduite à tenir, les limites, un exemple Next.js (App Router : route serveur du ticket, hook `usePresence`, composant) et les pièges fréquents. Elle est construite à partir des mêmes textes que `/contract.md` et `/docs`, et liée depuis `/docs`, `/contract.md` et `/ws-playground`.
+`GET /ws-docs` (page HTML mise en forme, hors de `/openapi.json` ; le Markdown brut est sur `/ws-docs.md`) : tous les messages client → serveur et serveur → client, les codes de fermeture avec la conduite à tenir, les limites, un exemple Next.js (App Router : route serveur du ticket, hook `usePresence`, composant) et les pièges fréquents. Elle est construite à partir des mêmes textes que `/contract.md` et `/docs`, et liée depuis `/docs`, `/contract.md` et `/ws-playground`.
 
 ### Activation à chaud
 
