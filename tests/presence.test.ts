@@ -215,6 +215,16 @@ describe('page de démonstration', () => {
   });
 });
 
+describe('contrat', () => {
+  it('/contract.md contient les types WebSocket à jour, sans marqueur non résolu', async () => {
+    const { api } = buildTestApp({ block2Enabled: true });
+    const text = (await api.get('/contract.md')).text;
+    expect(text).not.toContain('${');
+    expect(text).toContain("online: PublicUser[]");
+    expect(text).toContain("'bad_message' | 'drop_not_found'");
+  });
+});
+
 describe('présence simulée', () => {
   const timing = { tickMs: 20, minStayMs: 60, maxStayMs: 120 };
 

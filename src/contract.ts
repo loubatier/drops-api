@@ -89,7 +89,7 @@ Page de démonstration sans code : \`GET /ws-playground\`.
 6. Notifications : à l'auteur du drop uniquement, jamais pour ses propres actions. Aucune position d'utilisateur ne transite par le WebSocket.
 
 \`\`\`ts
-\${WS_TYPES}
+${WS_TYPES}
 \`\`\`
 `;
 
