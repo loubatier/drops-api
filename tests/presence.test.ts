@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { transformSync } from 'esbuild';
 import { bearer, buildTestApp } from './helpers.js';
+import { NEXT_PRESENCE_HOOK, NEXT_PRESENCE_WIDGET, NEXT_TICKET_ROUTE } from '../src/openapi/ws-docs.js';
 import {
   type Client,
   type TestServer,
@@ -222,6 +224,57 @@ describe('contrat', () => {
     expect(text).not.toContain('${');
     expect(text).toContain("online: PublicUser[]");
     expect(text).toContain("'bad_message' | 'drop_not_found'");
+  });
+});
+
+describe('/ws-docs', () => {
+  it('404 avec le bloc 2 désactivé, texte complet activé, hors de /openapi.json', async () => {
+    const off = buildTestApp({ block2Enabled: false });
+    const hidden = await off.api.get('/ws-docs');
+    expect(hidden.status).toBe(404);
+    expect(hidden.body.error.code).toBe('not_found');
+
+    const on = buildTestApp({ block2Enabled: true });
+    const res = await on.api.get('/ws-docs');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/plain; charset=utf-8/);
+    for (const needle of [
+      'presence:view',
+      'presence:leave',
+      'drop_not_found',
+      '4009',
+      'hello',
+      'notification',
+      'settings:updated',
+      '/api/realtime/ticket',
+      'new WebSocket',
+      "online: PublicUser[]",
+    ]) {
+      expect(res.text, needle).toContain(needle);
+    }
+    expect(res.text).not.toContain('${');
+    expect(Object.keys((await on.api.get('/openapi.json')).body.paths).some((p) => p.includes('ws-docs'))).toBe(false);
+    expect((await on.api.get('/contract.md')).text).toContain('/ws-docs');
+    expect((await on.api.get('/openapi.json')).body.info.description).toContain('/ws-docs');
+    expect((await on.api.get('/ws-playground')).text).toContain('/ws-docs');
+    expect((await off.api.get('/openapi.json')).text).not.toContain('ws-docs');
+  });
+
+  it('les exemples Next.js sont du TypeScript valide', () => {
+    transformSync(NEXT_TICKET_ROUTE, { loader: 'ts' });
+    transformSync(NEXT_PRESENCE_HOOK, { loader: 'tsx' });
+    transformSync(NEXT_PRESENCE_WIDGET, { loader: 'tsx' });
+  });
+
+  it('chaque type de message du protocole est documenté', async () => {
+    const { api } = buildTestApp({ block2Enabled: true });
+    const text = (await api.get('/ws-docs')).text;
+    const types = [
+      'ping', 'pong', 'hello', 'presence:view', 'presence:leave', 'presence:online', 'presence:drop',
+      'drop:created', 'drop:updated', 'drop:deleted', 'drop:opened', 'like:updated', 'comment:created',
+      'comment:deleted', 'notification', 'settings:updated', 'error',
+    ];
+    for (const type of types) expect(text, type).toContain('`' + type + '`');
   });
 });
 

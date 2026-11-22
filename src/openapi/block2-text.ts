@@ -46,7 +46,7 @@ Le serveur envoie un ping de protocole toutes les 30 s ; le navigateur répond t
 - \`presence:view\` : \`dropId\` absent, non entier ou ≤ 0 → \`error\` \`bad_message\` ; drop inexistant ou masqué → \`error\` \`drop_not_found\`, et le drop regardé avant reste regardé ; drop verrouillé → accepté.
 - \`presence:view\` compte dans la limite de 20 messages par 10 s : un client qui l'envoie en boucle est fermé en 4008.
 
-Pour tester seul, ouvrez [/ws-playground](/ws-playground) (client de démonstration) ; si l'enseignant a activé le simulateur, des utilisateurs simulés viennent regarder vos drops.
+Documentation complète avec un exemple Next.js : [/ws-docs](/ws-docs). Pour tester seul, ouvrez [/ws-playground](/ws-playground) (client de démonstration) ; si l'enseignant a activé le simulateur, des utilisateurs simulés viennent regarder vos drops.
 
 **Messages client → serveur** : \`presence:view\` (un seul drop regardé à la fois), \`presence:leave\`, \`ping\` (réponse \`pong\`).
 
@@ -59,3 +59,12 @@ Pour tester seul, ouvrez [/ws-playground](/ws-playground) (client de démonstrat
 \`\`\`ts
 ${WS_TYPES}
 \`\`\``;
+
+export const PRESENCE_STEPS = `1. Côté serveur de l'application (jamais dans le navigateur) : \`POST /realtime/ticket\` avec \`Authorization: Bearer <token>\`. Réponse : \`{ ticket, expiresAt, url }\`.
+2. Côté navigateur : ouvrir \`url\`. Un nouveau ticket est nécessaire à chaque reconnexion.
+3. Recevoir \`hello\` : \`user\` (soi-même) et \`online\` (utilisateurs connectés, soi-même inclus).
+4. En arrivant sur la page d'un drop : envoyer \`presence:view { dropId }\`, puis recevoir tout de suite \`presence:drop\` avec la liste actuelle (soi-même inclus). Les changements suivants arrivent par d'autres \`presence:drop\` (au plus un par seconde et par drop).
+5. En quittant la page : envoyer \`presence:leave\`. Fermer la connexion vaut un départ.
+6. \`viewers\` et \`online\` sont dédoublonnés par utilisateur ; \`viewers\` est dans l'ordre d'arrivée. \`error\` : \`bad_message\` (\`dropId\` invalide) ou \`drop_not_found\` (drop inexistant ou masqué).
+7. Codes de fermeture : 4001 \`session_expired\` → se reconnecter à la page de connexion ; 4002 \`block2_disabled\` → ne pas reconnecter ; 4008 \`rate_limited\` → corriger le code (messages en boucle) ; 4009 \`too_many_connections\` → une seule connexion par onglet ; 4010 \`server_restart\` et 4011 \`admin_disconnect\` → nouveau ticket puis reconnexion avec délai croissant.
+8. Pour tester : \`/ws-playground\`, et le simulateur si l'enseignant l'a activé (utilisateurs simulés en ligne qui viennent regarder les drops).`;

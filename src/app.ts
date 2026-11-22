@@ -29,6 +29,7 @@ import { reportRoutes } from './modules/reports/routes.js';
 import { systemRoutes } from './modules/health/routes.js';
 import { userRoutes } from './modules/users/routes.js';
 import { buildDocument } from './openapi/registry.js';
+import { buildWsDocs } from './openapi/ws-docs.js';
 import { PLAYGROUND_CSP, PLAYGROUND_HTML, PLAYGROUND_JS } from './playground/page.js';
 
 export interface AppDeps {
@@ -80,6 +81,7 @@ export function createApp({ config, db, options = {} }: AppDeps) {
   const routes: AnyRoute[] = [];
   let documentCache: object | null = null;
   let contractCache: string | null = null;
+  let wsDocsCache: string | null = null;
   settings.onChange(() => {
     documentCache = null;
     contractCache = null;
@@ -140,6 +142,10 @@ export function createApp({ config, db, options = {} }: AppDeps) {
   };
   app.get('/ws-playground', playground(PLAYGROUND_HTML, 'text/html; charset=utf-8'));
   app.get('/ws-playground.js', playground(PLAYGROUND_JS, 'application/javascript; charset=utf-8'));
+  app.get('/ws-docs', (_req, res, next) => {
+    if (!settings.block2Enabled()) return next(ApiError.of(404));
+    res.type('text/plain; charset=utf-8').send((wsDocsCache ??= buildWsDocs()));
+  });
   app.locals.apiRouter = router;
   app.locals.block2Routers = [alwaysRouter, block2Router];
   app.locals.routes = routes;

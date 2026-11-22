@@ -48,7 +48,7 @@ export const PLAYGROUND_HTML = `<!doctype html>
 </head>
 <body>
   <h1>Démonstration WebSocket</h1>
-  <p class="lead">Un client minimal pour voir le protocole en direct. Le token reste en mémoire : rien n'est stocké.</p>
+  <p class="lead">Un client minimal pour voir le protocole en direct. Le token reste en mémoire : rien n'est stocké. Documentation complète : <a href="/ws-docs" style="color:#ffd166">/ws-docs</a>.</p>
   <div class="grid">
     <div>
       <section>

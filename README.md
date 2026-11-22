@@ -102,6 +102,10 @@ Le cours a lieu de 8 h à 12 h et de 13 h à 17 h ; un redéploiement coupe l'AP
 
 `GET /ws-playground` (404 tant que le bloc 2 est désactivé) : un client WebSocket sans framework ni dépendance, pour montrer le protocole en direct ou vérifier le comportement de l'API sans écrire de client. Connexion (`demo` / `drops2026`), ticket avec compte à rebours, journal des trames (↑ envoyées, ↓ reçues), `ping`, `presence:view`, `presence:leave`, texte brut, réutilisation d'un ticket (refus 401), fermeture avec code et raison. Le token reste en mémoire ; la CSP (`script-src 'self'`, `connect-src 'self' wss:`) ne s'applique qu'à cette page. Elle n'apparaît pas dans `/openapi.json`.
 
+### Documentation du WebSocket pour les élèves
+
+`GET /ws-docs` (404 tant que le bloc 2 est désactivé, texte brut, hors de `/openapi.json`) : tous les messages client → serveur et serveur → client, les codes de fermeture avec la conduite à tenir, les limites, un exemple Next.js (App Router : route serveur du ticket, hook `usePresence`, composant) et les pièges fréquents. Elle est construite à partir des mêmes textes que `/contract.md` et `/docs`, et liée depuis `/docs`, `/contract.md` et `/ws-playground`.
+
 ### Activation à chaud
 
 Les deux réglages sont stockés en base et priment sur les variables d'environnement. Aucun redéploiement :
