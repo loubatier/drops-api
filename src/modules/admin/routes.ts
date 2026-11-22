@@ -40,16 +40,23 @@ const simulatorBody = z
   .object({
     enabled: z.boolean(),
     intervalSeconds: z.number().int().min(1, 'Entre 1 et 3600.').max(3600, 'Entre 1 et 3600.').optional(),
+    presence: z.boolean().optional(),
   })
   .strict();
 
 const adminDrop = (row: DropRow) => ({ ...toDrop(row, null), hidden: row.hidden === 1 });
 
+const SimulatorStateSchema = z.object({
+  enabled: z.boolean(),
+  intervalSeconds: z.number().int(),
+  presence: z.boolean(),
+});
+
 const SettingsSchema = z
   .object({
     block2Enabled: z.boolean(),
     lockMode: z.enum(['on', 'off']),
-    simulator: z.object({ enabled: z.boolean(), intervalSeconds: z.number().int() }),
+    simulator: SimulatorStateSchema,
   })
   .openapi('AdminSettings');
 
@@ -66,6 +73,10 @@ const RealtimeStatsSchema = z
     connections: z.number().int(),
     byUser: z.array(z.object({ user: PublicUserSchema, connections: z.number().int() })),
     viewers: z.array(z.object({ dropId: z.number().int(), count: z.number().int() })),
+    simulated: z.object({
+      online: z.array(PublicUserSchema),
+      viewing: z.array(z.object({ user: PublicUserSchema, dropId: z.number().int() })),
+    }),
   })
   .openapi('AdminRealtime');
 
@@ -183,7 +194,7 @@ export function adminRoutes({ simulator }: { simulator: SimulatorControl }) {
         200: {
           description: 'Réglages courants.',
           schema: SettingsSchema,
-          example: { block2Enabled: false, lockMode: 'off', simulator: { enabled: false, intervalSeconds: 20 } },
+          example: { block2Enabled: false, lockMode: 'off', simulator: { enabled: false, intervalSeconds: 20, presence: true } },
         },
       },
       handler: ({ settings }) => ({ body: settingsView(settings) }),
@@ -204,7 +215,7 @@ export function adminRoutes({ simulator }: { simulator: SimulatorControl }) {
         200: {
           description: 'Réglages après modification.',
           schema: SettingsSchema,
-          example: { block2Enabled: true, lockMode: 'on', simulator: { enabled: false, intervalSeconds: 20 } },
+          example: { block2Enabled: true, lockMode: 'on', simulator: { enabled: false, intervalSeconds: 20, presence: true } },
         },
       },
       handler: ({ body, settings }) => {
@@ -219,7 +230,7 @@ export function adminRoutes({ simulator }: { simulator: SimulatorControl }) {
       block2: true,
       summary: 'Connexions temps réel',
       description:
-        "Nombre de connexions WebSocket, connexions par utilisateur (trié par nombre décroissant : une application qui ouvre une socket à chaque rendu se repère ici) et lecteurs par drop.",
+        "Nombre de connexions WebSocket, connexions par utilisateur (trié par nombre décroissant : une application qui ouvre une socket à chaque rendu se repère ici) et lecteurs par drop. Le champ `simulated` liste, sans les mélanger aux vraies connexions, les utilisateurs simulés en ligne et les drops qu'ils regardent.",
       access: 'admin',
       rate: 'none',
       responses: {
@@ -230,6 +241,7 @@ export function adminRoutes({ simulator }: { simulator: SimulatorControl }) {
             connections: 23,
             byUser: [{ user: EXAMPLES.publicUser, connections: 4 }],
             viewers: [{ dropId: 42, count: 2 }],
+            simulated: { online: [EXAMPLES.publicUser], viewing: [{ user: EXAMPLES.publicUser, dropId: 42 }] },
           },
         },
       },
@@ -261,19 +273,19 @@ export function adminRoutes({ simulator }: { simulator: SimulatorControl }) {
       block2: true,
       summary: 'Démarrer ou arrêter le simulateur',
       description:
-        "Le simulateur agit au nom d'utilisateurs d'exemple (likes, commentaires, ouvertures, créations de drops) pour qu'un élève qui travaille seul voie des événements en direct. Tout ce qu'il crée disparaît avec `POST /admin/reset`.",
+        "Le simulateur agit au nom d'utilisateurs d'exemple (likes, commentaires, ouvertures, créations de drops) pour qu'un élève qui travaille seul voie des événements en direct. Tout ce qu'il crée disparaît avec `POST /admin/reset`.\n\n`presence` (vrai par défaut) fait aussi apparaître 3 utilisateurs d'exemple en ligne et venir regarder des drops, dont, une fois sur deux, un drop regardé par un vrai utilisateur. Arrêter le simulateur, ou passer `presence` à `false`, les fait tous partir.",
       access: 'admin',
       rate: 'none',
       body: simulatorBody,
       responses: {
         200: {
           description: 'État du simulateur.',
-          schema: z.object({ enabled: z.boolean(), intervalSeconds: z.number().int() }),
-          example: { enabled: true, intervalSeconds: 20 },
+          schema: SimulatorStateSchema,
+          example: { enabled: true, intervalSeconds: 20, presence: true },
         },
       },
       handler: ({ body }) => {
-        simulator.configure(body.enabled, body.intervalSeconds);
+        simulator.configure(body.enabled, body.intervalSeconds, body.presence);
         return { body: simulator.state() };
       },
     }),

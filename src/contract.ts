@@ -66,6 +66,21 @@ Nouveaux codes : 403 too_far, 403 drop_locked, 409 block2_disabled.
 
 ### Temps réel
 
+Page de démonstration sans code : \`GET /ws-playground\`.
+
+#### La présence pas à pas
+
+1. Côté serveur de l'application (jamais dans le navigateur) : \`POST /realtime/ticket\` avec \`Authorization: Bearer <token>\`. Réponse : \`{ ticket, expiresAt, url }\`.
+2. Côté navigateur : ouvrir \`url\`. Un nouveau ticket est nécessaire à chaque reconnexion.
+3. Recevoir \`hello\` : \`user\` (soi-même) et \`online\` (utilisateurs connectés, soi-même inclus).
+4. En arrivant sur la page d'un drop : envoyer \`presence:view { dropId }\`, puis recevoir tout de suite \`presence:drop\` avec la liste actuelle (soi-même inclus). Les changements suivants arrivent par d'autres \`presence:drop\` (au plus un par seconde et par drop).
+5. En quittant la page : envoyer \`presence:leave\`. Fermer la connexion vaut un départ.
+6. \`viewers\` et \`online\` sont dédoublonnés par utilisateur ; \`viewers\` est dans l'ordre d'arrivée. \`error\` : \`bad_message\` (\`dropId\` invalide) ou \`drop_not_found\` (drop inexistant ou masqué).
+7. Codes de fermeture : 4001 \`session_expired\` → se reconnecter à la page de connexion ; 4002 \`block2_disabled\` → ne pas reconnecter ; 4008 \`rate_limited\` → corriger le code (messages en boucle) ; 4009 \`too_many_connections\` → une seule connexion par onglet ; 4010 \`server_restart\` et 4011 \`admin_disconnect\` → nouveau ticket puis reconnexion avec délai croissant.
+8. Pour tester : \`/ws-playground\`, et le simulateur si l'enseignant l'a activé (utilisateurs simulés en ligne qui viennent regarder les drops).
+
+#### Protocole
+
 1. Côté serveur Next : \`POST /realtime/ticket\` (JWT) → \`{ ticket, expiresAt, url }\`. Ticket à usage unique, 30 s. Le JWT ne passe jamais dans l'URL du WebSocket.
 2. Navigateur : ouvrir \`url\` (\`/ws?ticket=wst_…\`). Ticket absent, expiré ou déjà utilisé : HTTP 401 au format d'erreur, pendant le handshake.
 3. Messages JSON \`{ type, data }\`. Message illisible ou inconnu : message \`error\`, sans fermeture.

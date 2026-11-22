@@ -7,7 +7,7 @@ type ClientMessage =
   | { type: 'presence:leave'; data: Record<string, never> }
   | { type: 'ping'; data: Record<string, never> };
 type ServerMessage =
-  | { type: 'hello'; data: { user: PublicUser; serverTime: string; lockMode: 'on' | 'off' } }
+  | { type: 'hello'; data: { user: PublicUser; serverTime: string; lockMode: 'on' | 'off'; online: PublicUser[] } }
   | { type: 'pong'; data: { serverTime: string } }
   | { type: 'presence:online'; data: { users: PublicUser[] } }
   | { type: 'presence:drop'; data: { dropId: number; viewers: PublicUser[] } }
@@ -19,7 +19,7 @@ type ServerMessage =
   | { type: 'comment:deleted'; data: { dropId: number; commentId: number } }
   | { type: 'notification'; data: Notification }
   | { type: 'settings:updated'; data: { lockMode: 'on' | 'off' } }
-  | { type: 'error'; data: { code: string; message: string } };`;
+  | { type: 'error'; data: { code: 'bad_message' | 'drop_not_found'; message: string } };`;
 
 export const WS_PROTOCOL = `**WebSocket** (OpenAPI ne décrit pas les WebSocket, le protocole est donc ici).
 
@@ -36,6 +36,17 @@ export const WS_PROTOCOL = `**WebSocket** (OpenAPI ne décrit pas les WebSocket,
 - 4011 \`admin_disconnect\` : déconnexion forcée par l'enseignant.
 
 Le serveur envoie un ping de protocole toutes les 30 s ; le navigateur répond tout seul.
+
+**Présence** (un lecteur, c'est un utilisateur) :
+- Après un \`presence:view\` valide, le serveur répond **tout de suite** à cette connexion par un \`presence:drop\` avec la liste actuelle des lecteurs du drop, soi-même inclus, même si la liste n'a pas changé. Les autres connexions reçoivent \`presence:drop\` au plus une fois par seconde, et seulement si la liste a changé.
+- \`hello.data.online\` donne les utilisateurs connectés à l'ouverture, soi-même inclus. Reconnaissez-vous avec \`hello.data.user.id\`.
+- \`viewers\` et \`online\` sont dédoublonnés par utilisateur : deux onglets sur le même drop font un seul lecteur, qui reste lecteur tant qu'un onglet le regarde.
+- \`viewers\` est dans l'ordre d'arrivée sur le drop, du plus ancien au plus récent, stable.
+- Une fermeture de connexion, quelle qu'en soit la cause (fermeture normale, coupure réseau, heartbeat sans réponse, codes 4001 à 4011), vaut \`presence:leave\`.
+- \`presence:view\` : \`dropId\` absent, non entier ou ≤ 0 → \`error\` \`bad_message\` ; drop inexistant ou masqué → \`error\` \`drop_not_found\`, et le drop regardé avant reste regardé ; drop verrouillé → accepté.
+- \`presence:view\` compte dans la limite de 20 messages par 10 s : un client qui l'envoie en boucle est fermé en 4008.
+
+Pour tester seul, ouvrez [/ws-playground](/ws-playground) (client de démonstration) ; si l'enseignant a activé le simulateur, des utilisateurs simulés viennent regarder vos drops.
 
 **Messages client → serveur** : \`presence:view\` (un seul drop regardé à la fois), \`presence:leave\`, \`ping\` (réponse \`pong\`).
 

@@ -35,28 +35,42 @@ export interface TicketOwner {
   exp: number;
 }
 
+type PublicUserValue = ReturnType<typeof toPublicUser>;
+
 export interface RealtimeStats {
   connections: number;
-  byUser: { user: ReturnType<typeof toPublicUser>; connections: number }[];
+  byUser: { user: PublicUserValue; connections: number }[];
   viewers: { dropId: number; count: number }[];
+  simulated: { online: PublicUserValue[]; viewing: { user: PublicUserValue; dropId: number }[] };
+}
+
+export interface SimulatedPresence {
+  setOnline(users: PublicUserValue[]): void;
+  view(userId: number, dropId: number | null): void;
+  viewingNow(userId: number): number | null;
+  realViewedDrops(): number[];
 }
 
 export interface Realtime {
   attach(server: Server): void;
   issueTicket(owner: TicketOwner): { ticket: string; expiresAt: string };
   stats(): RealtimeStats;
+  simulated: SimulatedPresence;
   disconnectAll(): number;
   checkSessions(): void;
   close(): Promise<void>;
 }
 
-interface Connection {
-  ws: WebSocket;
+interface Presence {
   userId: number;
+  user: PublicUserValue;
+  viewing: number | null;
+}
+
+interface Connection extends Presence {
+  ws: WebSocket;
   jti: string;
   jwtExp: number;
-  user: ReturnType<typeof toPublicUser>;
-  viewing: number | null;
   windowStart: number;
   windowCount: number;
   alive: boolean;
@@ -84,6 +98,11 @@ export function createRealtime(
 
   const tickets = new Map<string, Ticket>();
   const connections = new Set<Connection>();
+  const virtuals = new Map<number, Presence>();
+  const presences = function* (): Generator<Presence> {
+    yield* connections;
+    yield* virtuals.values();
+  };
   const wss = new WebSocketServer({ noServer: true, maxPayload: 8 * 1024 });
   const cleanups: (() => void)[] = [];
   const timers: NodeJS.Timeout[] = [];
@@ -116,8 +135,8 @@ export function createRealtime(
 
   let presenceTimer: NodeJS.Timeout | null = null;
   const onlineUsers = () => {
-    const seen = new Map<number, ReturnType<typeof toPublicUser>>();
-    for (const c of connections) if (!seen.has(c.userId)) seen.set(c.userId, c.user);
+    const seen = new Map<number, PublicUserValue>();
+    for (const p of presences()) if (!seen.has(p.userId)) seen.set(p.userId, p.user);
     return [...seen.values()].sort((a, b) => a.id - b.id);
   };
   const scheduleOnline = () => {
@@ -130,27 +149,44 @@ export function createRealtime(
   };
 
   const dropTimers = new Map<number, NodeJS.Timeout>();
+  const arrivals = new Map<number, number[]>();
+  const lastSent = new Map<number, string>();
   const viewersOf = (dropId: number) => {
-    const seen = new Map<number, ReturnType<typeof toPublicUser>>();
-    for (const c of connections) if (c.viewing === dropId && !seen.has(c.userId)) seen.set(c.userId, c.user);
-    return [...seen.values()].sort((a, b) => a.id - b.id);
+    const current = new Map<number, PublicUserValue>();
+    for (const p of presences()) if (p.viewing === dropId && !current.has(p.userId)) current.set(p.userId, p.user);
+    const order = (arrivals.get(dropId) ?? []).filter((id) => current.has(id));
+    for (const id of current.keys()) if (!order.includes(id)) order.push(id);
+    if (order.length > 0) arrivals.set(dropId, order);
+    else arrivals.delete(dropId);
+    return order.map((id) => current.get(id)!);
   };
   const scheduleDrop = (dropId: number) => {
     if (dropTimers.has(dropId)) return;
     const timer = setTimeout(() => {
       dropTimers.delete(dropId);
-      broadcast('presence:drop', { dropId, viewers: viewersOf(dropId) });
+      const viewers = viewersOf(dropId);
+      const key = viewers.map((u) => u.id).join(',');
+      if ((lastSent.get(dropId) ?? '') === key) return;
+      if (key) lastSent.set(dropId, key);
+      else lastSent.delete(dropId);
+      broadcast('presence:drop', { dropId, viewers });
     }, presenceDebounceMs);
     timer.unref();
     dropTimers.set(dropId, timer);
   };
 
-  const setViewing = (conn: Connection, dropId: number | null) => {
-    const previous = conn.viewing;
+  const setViewing = (who: Presence, dropId: number | null) => {
+    const previous = who.viewing;
     if (previous === dropId) return;
-    conn.viewing = dropId;
-    if (previous !== null) scheduleDrop(previous);
-    if (dropId !== null) scheduleDrop(dropId);
+    who.viewing = dropId;
+    if (previous !== null) {
+      viewersOf(previous);
+      scheduleDrop(previous);
+    }
+    if (dropId !== null) {
+      viewersOf(dropId);
+      scheduleDrop(dropId);
+    }
   };
 
   const canSeeDrop = (row: DropRow | undefined, viewerId: number): row is DropRow =>
@@ -208,7 +244,7 @@ export function createRealtime(
         'drop:deleted',
         guard((payload: { id: number }) => {
           broadcast('drop:deleted', { dropId: payload.id });
-          for (const conn of connections) if (conn.viewing === payload.id) setViewing(conn, null);
+          for (const who of [...presences()]) if (who.viewing === payload.id) setViewing(who, null);
         }),
       ),
       events.on(
@@ -343,7 +379,12 @@ export function createRealtime(
         closeConnection(old, CLOSE.tooManyConnections);
       }
 
-      send(conn, 'hello', { user, serverTime: new Date().toISOString(), lockMode: settings.lockMode() });
+      send(conn, 'hello', {
+        user,
+        serverTime: new Date().toISOString(),
+        lockMode: settings.lockMode(),
+        online: onlineUsers(),
+      });
       scheduleOnline();
     });
   };
@@ -378,12 +419,13 @@ export function createRealtime(
       case 'presence:view': {
         const dropId = data.dropId;
         if (typeof dropId !== 'number' || !Number.isInteger(dropId) || dropId < 1) {
-          return badMessage(conn, '`dropId` doit être un entier.');
+          return badMessage(conn, 'dropId doit être un entier positif.');
         }
         if (!canSeeDrop(findDropRow(db, dropId, conn.userId), conn.userId)) {
-          return badMessage(conn, 'Drop introuvable.', 'not_found');
+          return badMessage(conn, "Ce drop n'existe pas.", 'drop_not_found');
         }
-        return setViewing(conn, dropId);
+        setViewing(conn, dropId);
+        return send(conn, 'presence:drop', { dropId, viewers: viewersOf(dropId) });
       }
       default:
         return badMessage(conn, `Type de message inconnu : ${message.type}.`);
@@ -424,8 +466,30 @@ export function createRealtime(
       tickets.set(ticket, { owner, expiresAt });
       return { ticket, expiresAt: new Date(expiresAt).toISOString() };
     },
+    simulated: {
+      setOnline(users) {
+        const wanted = new Map(users.map((u) => [u.id, u]));
+        for (const [id, who] of [...virtuals]) {
+          if (wanted.has(id)) continue;
+          setViewing(who, null);
+          virtuals.delete(id);
+        }
+        for (const [id, user] of wanted) if (!virtuals.has(id)) virtuals.set(id, { userId: id, user, viewing: null });
+        scheduleOnline();
+      },
+      view(userId, dropId) {
+        const who = virtuals.get(userId);
+        if (who) setViewing(who, dropId);
+      },
+      viewingNow: (userId) => virtuals.get(userId)?.viewing ?? null,
+      realViewedDrops() {
+        const ids = new Set<number>();
+        for (const c of connections) if (c.viewing !== null) ids.add(c.viewing);
+        return [...ids].sort((a, b) => a - b);
+      },
+    },
     stats() {
-      const perUser = new Map<number, { user: ReturnType<typeof toPublicUser>; connections: number }>();
+      const perUser = new Map<number, { user: PublicUserValue; connections: number }>();
       const perDrop = new Map<number, number>();
       for (const c of connections) {
         const entry = perUser.get(c.userId) ?? { user: c.user, connections: 0 };
@@ -439,6 +503,13 @@ export function createRealtime(
         viewers: [...perDrop.entries()]
           .map(([dropId, count]) => ({ dropId, count }))
           .sort((a, b) => b.count - a.count || a.dropId - b.dropId),
+        simulated: {
+          online: [...virtuals.values()].map((v) => v.user).sort((a, b) => a.id - b.id),
+          viewing: [...virtuals.values()]
+            .filter((v) => v.viewing !== null)
+            .map((v) => ({ user: v.user, dropId: v.viewing as number }))
+            .sort((a, b) => a.user.id - b.user.id),
+        },
       };
     },
     disconnectAll() {
@@ -453,6 +524,9 @@ export function createRealtime(
       if (presenceTimer) clearTimeout(presenceTimer);
       for (const t of dropTimers.values()) clearTimeout(t);
       dropTimers.clear();
+      arrivals.clear();
+      lastSent.clear();
+      virtuals.clear();
       server?.off('upgrade', handleUpgrade);
       for (const conn of [...connections]) closeConnection(conn, CLOSE.serverRestart);
       await new Promise<void>((resolve) => {

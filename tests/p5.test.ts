@@ -263,8 +263,8 @@ describe('simulateur', () => {
     const seen = vi.fn();
     const off = events.on('like:updated', (_p, source) => source === server!.db && seen());
     const start = await server.api.post('/admin/simulator').set(ADMIN).send({ enabled: true, intervalSeconds: 1 });
-    expect(start.body).toEqual({ enabled: true, intervalSeconds: 1 });
-    expect((await server.api.get('/admin/settings').set(ADMIN)).body.simulator).toEqual({ enabled: true, intervalSeconds: 1 });
+    expect(start.body).toEqual({ enabled: true, intervalSeconds: 1, presence: true });
+    expect((await server.api.get('/admin/settings').set(ADMIN)).body.simulator).toEqual({ enabled: true, intervalSeconds: 1, presence: true });
     const baseline = counts(server).join();
     await vi.waitFor(() => expect(counts(server!).join()).not.toBe(baseline), { timeout: 4000 });
     const stop = await server.api.post('/admin/simulator').set(ADMIN).send({ enabled: false });
@@ -299,7 +299,7 @@ describe('smoke:block2', () => {
     const ok = await runSmokeBlock2(`http://127.0.0.1:${server.port}`, 'teacher-key', (l) => lines.push(l));
     expect(lines.join('\n')).not.toContain('❌');
     expect(lines.some((l) => l.startsWith('⚠️'))).toBe(true);
-    expect(lines.filter((l) => l.startsWith('✅'))).toHaveLength(7);
+    expect(lines.filter((l) => l.startsWith('✅'))).toHaveLength(9);
     expect(ok).toBe(true);
     expect((await server.api.get('/admin/settings').set(ADMIN)).body).toEqual(before);
     expect(server.db.prepare('SELECT COUNT(*) AS n FROM drops').get()).toEqual({ n: 60 });

@@ -46,6 +46,10 @@ class Socket {
     }
   }
 
+  send(type: string, data: unknown = {}) {
+    this.ws.send(JSON.stringify({ type, data }));
+  }
+
   close() {
     this.ws.close();
   }
@@ -67,6 +71,7 @@ export async function runSmokeBlock2(
     email: `sm2${k}_${suffix}@example.com`,
     password: 'smoke-password-1',
     token: '',
+    id: 0,
   }));
   const [a, b] = accounts as [(typeof accounts)[number], (typeof accounts)[number]];
   const state: {
@@ -147,6 +152,7 @@ export async function runSmokeBlock2(
           });
           expectStatus(reg.status, 201, 'POST /auth/register');
           account.token = reg.json.token;
+          account.id = reg.json.user.id;
         }
         state.socketA = await connect(a);
         state.socketB = await connect(b);
@@ -204,6 +210,34 @@ export async function runSmokeBlock2(
         const res = await call('GET', '/dataset/points', { token: b.token });
         expectStatus(res.status, 200, 'GET /dataset/points');
         if (!(res.json.count > 1000) || res.json.points.length !== res.json.count) throw new Error('jeu de données trop petit');
+      },
+    },
+    {
+      name: 'présence : A seul, puis A et B, puis A seul après le départ de B',
+      run: async () => {
+        const socketA = state.socketA!;
+        const socketB = state.socketB!;
+        const ours = new Set([a.id, b.id]);
+        const only = (m: Message, wanted: number[]) =>
+          m.type === 'presence:drop' &&
+          m.data.dropId === dropOne &&
+          JSON.stringify(m.data.viewers.map((u: any) => u.id).filter((id: number) => ours.has(id))) === JSON.stringify(wanted);
+        socketA.send('presence:view', { dropId: dropOne });
+        await socketA.next((m) => only(m, [a.id]), 'instantané de A avec lui seul', 1500);
+        const sizeA = socketA.messages.length;
+        socketB.send('presence:view', { dropId: dropOne });
+        await socketB.next((m) => only(m, [a.id, b.id]), 'B reçoit [A, B]');
+        await socketA.next((m) => socketA.messages.indexOf(m) >= sizeA && only(m, [a.id, b.id]), 'A reçoit [A, B]');
+        const sizeAfter = socketA.messages.length;
+        socketB.close();
+        await socketA.next((m) => socketA.messages.indexOf(m) >= sizeAfter && only(m, [a.id]), 'A reçoit [A] après le départ de B');
+      },
+    },
+    {
+      name: '/ws-playground répond 200',
+      run: async () => {
+        const res = await fetch(`${base}/ws-playground`);
+        expectStatus(res.status, 200, 'GET /ws-playground');
       },
     },
   ];

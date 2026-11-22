@@ -5,12 +5,33 @@ import { recordOpen } from './modules/drops/open.js';
 import { SIM_COMMENTS, SIM_DROPS } from './simulator-data.js';
 import { addComment, createDrop, setLike } from './services.js';
 import type { Settings } from './settings.js';
+import type { SimulatedPresence } from './realtime/hub.js';
+import { toPublicUser } from './modules/users/repo.js';
 
 export type SimulatorAction = 'like' | 'comment' | 'open' | 'create';
 
+export interface SimulatorState {
+  enabled: boolean;
+  intervalSeconds: number;
+  presence: boolean;
+}
+
+export interface PresenceTiming {
+  tickMs: number;
+  minStayMs: number;
+  maxStayMs: number;
+}
+
+export interface SimulatorOptions {
+  presence?: SimulatedPresence;
+  presenceTiming?: Partial<PresenceTiming>;
+  rng?: () => number;
+}
+
 export interface SimulatorControl {
-  state(): { enabled: boolean; intervalSeconds: number };
-  configure(enabled: boolean, intervalSeconds?: number): void;
+  state(): SimulatorState;
+  configure(enabled: boolean, intervalSeconds?: number, presence?: boolean): void;
+  presenceTick(): string | null;
   runOnce(action?: SimulatorAction): string | null;
   stop(): void;
 }
@@ -33,14 +54,23 @@ const WEIGHTS: [SimulatorAction, number][] = [
 ];
 
 const ZONE_RADIUS_USED_M = 2500;
+const SIMULATED_ONLINE_COUNT = 3;
+const DEFAULT_PRESENCE_TIMING: PresenceTiming = { tickMs: 15_000, minStayMs: 30_000, maxStayMs: 90_000 };
 
 export function createSimulator(
   config: Config,
   db: Db,
   settings: Settings,
-  rng: () => number = Math.random,
+  options: SimulatorOptions = {},
 ): SimulatorControl {
+  const rng = options.rng ?? Math.random;
+  const presence = options.presence;
+  const timing = { ...DEFAULT_PRESENCE_TIMING, ...options.presenceTiming };
   let enabled = false;
+  let presenceEnabled = true;
+  let presenceTimer: NodeJS.Timeout | null = null;
+  const leaveTimers = new Set<NodeJS.Timeout>();
+  let simulatedIds: number[] = [];
   let intervalSeconds = config.simulatorIntervalSeconds;
   let timer: NodeJS.Timeout | null = null;
 
@@ -138,10 +168,77 @@ export function createSimulator(
     timer.unref();
   };
 
+  const presenceUsers = () =>
+    (
+      db
+        .prepare(
+          "SELECT id, username, display_name, avatar_url FROM users WHERE is_seed = 1 AND username != 'demo' ORDER BY id",
+        )
+        .all() as Parameters<typeof toPublicUser>[0][]
+    ).map(toPublicUser);
+
+  const visibleDropIds = () =>
+    (db.prepare('SELECT id FROM drops WHERE hidden = 0').all() as { id: number }[]).map((d) => d.id);
+
+  const presenceTick = (): string | null => {
+    if (!presence) return null;
+    const idle = simulatedIds.filter((id) => presence.viewingNow(id) === null);
+    const who = pick(idle);
+    if (who === undefined) return null;
+    const visible = new Set(visibleDropIds());
+    const watched = presence.realViewedDrops().filter((id) => visible.has(id));
+    const dropId = rng() < 0.5 && watched.length > 0 ? pick(watched) : pick([...visible]);
+    if (dropId === undefined) return null;
+    presence.view(who, dropId);
+    const stay = timing.minStayMs + rng() * (timing.maxStayMs - timing.minStayMs);
+    const leave = setTimeout(() => {
+      leaveTimers.delete(leave);
+      presence.view(who, null);
+    }, stay);
+    leave.unref();
+    leaveTimers.add(leave);
+    return `view:${who}:${dropId}`;
+  };
+
+  const schedulePresence = () => {
+    if (!enabled || !presenceEnabled || !presence) return;
+    presenceTimer = setTimeout(() => {
+      try {
+        presenceTick();
+      } catch (err) {
+        console.error('[simulateur]', err);
+      }
+      schedulePresence();
+    }, timing.tickMs * (0.5 + rng()));
+    presenceTimer.unref();
+  };
+
+  const stopPresence = () => {
+    if (presenceTimer) clearTimeout(presenceTimer);
+    presenceTimer = null;
+    for (const t of leaveTimers) clearTimeout(t);
+    leaveTimers.clear();
+    if (simulatedIds.length > 0) presence?.setOnline([]);
+    simulatedIds = [];
+  };
+
+  const startPresence = () => {
+    if (!presence) return;
+    const pool = presenceUsers();
+    const chosen: typeof pool = [];
+    while (chosen.length < SIMULATED_ONLINE_COUNT && pool.length > 0) {
+      chosen.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]!);
+    }
+    simulatedIds = chosen.map((u) => u.id);
+    presence.setOnline(chosen);
+    schedulePresence();
+  };
+
   const stop = () => {
     enabled = false;
     if (timer) clearTimeout(timer);
     timer = null;
+    stopPresence();
   };
 
   settings.onChange((change) => {
@@ -149,13 +246,17 @@ export function createSimulator(
   });
 
   return {
-    state: () => ({ enabled, intervalSeconds }),
-    configure(nextEnabled, nextInterval) {
+    state: () => ({ enabled, intervalSeconds, presence: presenceEnabled }),
+    presenceTick,
+    configure(nextEnabled, nextInterval, nextPresence = true) {
       if (nextInterval !== undefined) intervalSeconds = nextInterval;
       if (timer) clearTimeout(timer);
       timer = null;
+      stopPresence();
       enabled = nextEnabled;
+      presenceEnabled = nextPresence;
       schedule();
+      if (enabled && presenceEnabled) startPresence();
     },
     runOnce,
     stop,

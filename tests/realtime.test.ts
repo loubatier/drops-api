@@ -48,7 +48,7 @@ describe('bloc 2 désactivé', () => {
     expect(read.body).toEqual({
       block2Enabled: false,
       lockMode: 'off',
-      simulator: { enabled: false, intervalSeconds: 20 },
+      simulator: { enabled: false, intervalSeconds: 20, presence: true },
     });
     const locked = await api.patch('/admin/settings').set(ADMIN).send({ lockMode: 'on' });
     expect(locked.status).toBe(409);
@@ -242,7 +242,7 @@ describe('WebSocket', () => {
     await a.client.waitFor((m) => m.type === 'presence:drop' && m.data.dropId === two.id && m.data.viewers.length === 1);
     expect((await server.api.get('/admin/realtime').set(ADMIN)).body.viewers).toEqual([{ dropId: two.id, count: 1 }]);
     a.client.send('presence:view', { dropId: 999999 });
-    expect((await a.client.next('error')).data.code).toBe('not_found');
+    expect((await a.client.next('error')).data.code).toBe('drop_not_found');
   });
 
   it('notifications reçues uniquement par l’auteur, jamais pour ses propres actions', async () => {

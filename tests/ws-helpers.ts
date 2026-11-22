@@ -7,6 +7,7 @@ import type { Config } from '../src/config.js';
 import { legacySeedPasswordHash, seedLegacyDatabase } from './fixtures/legacy-seed.js';
 import { type Db, openDb } from '../src/db/index.js';
 import type { Realtime, RealtimeOptions } from '../src/realtime/hub.js';
+import type { SimulatorOptions } from '../src/simulator.js';
 import { SEED_NOW, testConfig, withDefaultReader } from './helpers.js';
 
 export interface TestServer {
@@ -22,11 +23,12 @@ export interface TestServer {
 export async function startServer(
   overrides: Partial<Config> = {},
   realtimeOptions: RealtimeOptions = { presenceDebounceMs: 30 },
+  simulatorOptions: SimulatorOptions = {},
 ): Promise<TestServer> {
   const config = testConfig({ block2Enabled: true, ...overrides });
   const db = openDb(':memory:');
   seedLegacyDatabase(db, { now: SEED_NOW, passwordHash: legacySeedPasswordHash() });
-  const app = createApp({ config, db, options: { realtime: realtimeOptions } });
+  const app = createApp({ config, db, options: { realtime: realtimeOptions, simulator: simulatorOptions } });
   const server = http.createServer(app);
   const realtime = app.locals.realtime as Realtime;
   realtime.attach(server);

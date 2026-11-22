@@ -7,7 +7,7 @@ import type { Config } from './config.js';
 import { buildContract } from './contract.js';
 import { type RealtimeOptions, createRealtime } from './realtime/hub.js';
 import { createSettings } from './settings.js';
-import { createSimulator } from './simulator.js';
+import { type SimulatorOptions, createSimulator } from './simulator.js';
 import { realtimeRoutes } from './modules/realtime/routes.js';
 import { ApiError } from './errors.js';
 import type { Db } from './db/index.js';
@@ -29,11 +29,12 @@ import { reportRoutes } from './modules/reports/routes.js';
 import { systemRoutes } from './modules/health/routes.js';
 import { userRoutes } from './modules/users/routes.js';
 import { buildDocument } from './openapi/registry.js';
+import { PLAYGROUND_CSP, PLAYGROUND_HTML, PLAYGROUND_JS } from './playground/page.js';
 
 export interface AppDeps {
   config: Config;
   db: Db;
-  options?: { realtime?: RealtimeOptions };
+  options?: { realtime?: RealtimeOptions; simulator?: SimulatorOptions };
 }
 
 export function createApp({ config, db, options = {} }: AppDeps) {
@@ -73,7 +74,7 @@ export function createApp({ config, db, options = {} }: AppDeps) {
 
   const settings = createSettings(db, config);
   const realtime = createRealtime(config, db, settings, options.realtime);
-  const simulator = createSimulator(config, db, settings);
+  const simulator = createSimulator(config, db, settings, { presence: realtime.simulated, ...options.simulator });
   const flags = (): DocFlags => ({ block2: settings.block2Enabled() });
 
   const routes: AnyRoute[] = [];
@@ -132,6 +133,13 @@ export function createApp({ config, db, options = {} }: AppDeps) {
   app.use(router);
   app.use(alwaysRouter);
   app.use((req, res, next) => (settings.block2Enabled() ? block2Router(req, res, next) : next()));
+  const playground = (body: string, type: string): RequestHandler => (_req, res, next) => {
+    if (!settings.block2Enabled()) return next(ApiError.of(404));
+    res.setHeader('Content-Security-Policy', PLAYGROUND_CSP);
+    res.type(type).send(body);
+  };
+  app.get('/ws-playground', playground(PLAYGROUND_HTML, 'text/html; charset=utf-8'));
+  app.get('/ws-playground.js', playground(PLAYGROUND_JS, 'application/javascript; charset=utf-8'));
   app.locals.apiRouter = router;
   app.locals.block2Routers = [alwaysRouter, block2Router];
   app.locals.routes = routes;

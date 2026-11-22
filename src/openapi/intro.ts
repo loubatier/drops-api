@@ -64,4 +64,6 @@ export const BLOCK2_INTRO = `
 
 ## Bloc 2
 Temps réel (WebSocket), recherche géographique, ouverture et verrouillage des drops, jeu de données. Tout est additif : rien du bloc 1 ne change. Nouveaux codes d'erreur : \`too_far\` (403), \`drop_locked\` (403), \`block2_disabled\` (409). Les erreurs peuvent porter un champ facultatif \`meta\`.
+
+Une page de démonstration du WebSocket, sans code à écrire, est servie sur [\`/ws-playground\`](/ws-playground).
 `;

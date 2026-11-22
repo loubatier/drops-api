@@ -89,6 +89,19 @@ Le bloc 2 (`SPECS_V2.md`) est **additif et caché derrière un interrupteur** : 
 3. Avant de fusionner : `npm test` vert, puis `ADMIN_KEY=… npm run smoke:block2 -- https://<staging>` vert. Ce script crée deux comptes et des drops, puis restaure les réglages et supprime les drops. **Ne jamais le lancer contre la production pendant un cours** (il avertit si l'URL ne contient pas `staging`).
 4. Fusionner dans `main` **le soir**, jamais pendant un cours (un redéploiement coupe l'API environ une minute). Vérifier que la production a toujours `block2Enabled=false` (`GET /admin/settings`) puis relancer `npm run smoke`.
 
+### Fenêtre de déploiement du lundi (J4)
+
+Le cours a lieu de 8 h à 12 h et de 13 h à 17 h ; un redéploiement coupe l'API environ une minute et ferme tous les WebSocket.
+
+1. Le lundi, fusionner dans `main` **entre 12 h 00 et 12 h 45**, pas pendant un cours.
+2. Avant la fusion : tests verts, `npm run smoke:block2` vert sur **staging**, et `/ws-playground` vérifiée à la main sur staging avec deux navigateurs.
+3. Après la fusion : `npm run smoke` (bloc 1) sur la production.
+4. Activer le bloc 2 à **12 h 45** (`PATCH /admin/settings {"block2Enabled":true}`), pas à 8 h.
+
+### Page de démonstration
+
+`GET /ws-playground` (404 tant que le bloc 2 est désactivé) : un client WebSocket sans framework ni dépendance, pour montrer le protocole en direct ou vérifier le comportement de l'API sans écrire de client. Connexion (`demo` / `drops2026`), ticket avec compte à rebours, journal des trames (↑ envoyées, ↓ reçues), `ping`, `presence:view`, `presence:leave`, texte brut, réutilisation d'un ticket (refus 401), fermeture avec code et raison. Le token reste en mémoire ; la CSP (`script-src 'self'`, `connect-src 'self' wss:`) ne s'applique qu'à cette page. Elle n'apparaît pas dans `/openapi.json`.
+
 ### Activation à chaud
 
 Les deux réglages sont stockés en base et priment sur les variables d'environnement. Aucun redéploiement :
@@ -108,9 +121,10 @@ curl -X PATCH https://<domaine>/admin/settings -H "X-Admin-Key: $ADMIN_KEY" \
 
 ### Outils de l'enseignant
 
-- `GET /admin/realtime` : connexions par utilisateur (trié par nombre décroissant, pour repérer une application qui ouvre une socket à chaque rendu) et lecteurs par drop.
+- `GET /admin/realtime` : connexions par utilisateur (trié par nombre décroissant, pour repérer une application qui ouvre une socket à chaque rendu) et lecteurs par drop. Le champ `simulated` liste séparément les utilisateurs simulés en ligne et les drops qu'ils regardent.
 - `POST /admin/realtime/disconnect-all` : ferme tout avec le code 4011, pour tester la reconnexion.
 - `POST /admin/simulator` avec `{"enabled":true,"intervalSeconds":20}` : lance le **simulateur**. Il agit au nom d'utilisateurs d'exemple (50 % likes, 30 % commentaires, 15 % ouvertures, 5 % créations de drops), passe par les mêmes services que l'API donc émet les mêmes événements WebSocket, n'écrit jamais sur les drops d'un élève (sauf likes et ouvertures) et disparaît avec `POST /admin/reset`. `{"enabled":false}` l'arrête. Il se lance aussi au démarrage avec `SIMULATOR_ENABLED=true`.
+- **Présence simulée** : `POST /admin/simulator` accepte `"presence"` (vrai par défaut quand le simulateur est activé). 3 utilisateurs d'exemple (hors `demo`) apparaissent alors en ligne, et toutes les 15 s environ (± 50 %) l'un d'eux regarde un drop pendant 30 à 90 s : une fois sur deux un drop regardé par un vrai utilisateur, sinon un drop visible au hasard. Pour qu'un élève seul voie son widget bouger : `curl -X POST https://<domaine>/admin/simulator -H "X-Admin-Key: $ADMIN_KEY" -H "Content-Type: application/json" -d '{"enabled":true}'`. `{"enabled":true,"presence":false}` garde le simulateur sans la présence ; l'arrêter fait partir tous les simulés. `GET /admin/settings` renvoie `simulator.presence`.
 
 ### Jeu de données
 
