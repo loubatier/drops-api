@@ -83,7 +83,10 @@ export function retain() {
   clearTimeout(closeTimer);
   consumers += 1;
   if (!socket && !connecting && !reconnectTimer) connect();
+  let released = false;
   return () => {
+    if (released) return;
+    released = true;
     consumers -= 1;
     if (consumers === 0) closeTimer = setTimeout(disconnect, CLOSE_DELAY_MS);
   };
@@ -142,6 +145,7 @@ export function usePresence(dropId: number) {
   const [viewers, setViewers] = useState<Viewer[]>([]);
 
   useEffect(() => {
+    setViewers([]);
     const release = retain();
     const stopOpen = onOpen(() => send('presence:view', { dropId }));
     const stopDrop = subscribe('presence:drop', (data) => {
@@ -271,7 +275,7 @@ ${NEXT_TICKET_ROUTE}
 
 \`lib/realtime.ts\` : ce module (pas un composant, pas un hook) possède **la** socket de l'onglet. Il l'ouvre quand le premier composant en a besoin, la ferme quand le dernier part, et reconnecte avec un nouveau ticket sauf pour les codes qui demandent de s'arrêter. Les composants ne créent jamais de \`WebSocket\` eux-mêmes : ils s'abonnent à des types de messages et envoient des messages à travers lui.
 
-- \`retain()\` : « j'ai besoin de la connexion ». Retourne la fonction qui la relâche. La socket se ferme 1 s après le dernier relâchement (ce délai évite de fermer puis rouvrir lors d'un changement de page ou du mode strict).
+- \`retain()\` : « j'ai besoin de la connexion ». Retourne la fonction qui la relâche (sans effet si elle est appelée deux fois). La socket se ferme 1 s après le dernier relâchement (ce délai évite de fermer puis rouvrir lors d'un changement de page ou du mode strict).
 - \`subscribe(type, listener)\` : reçoit les \`data\` de chaque message de ce type. Retourne la fonction qui se désabonne.
 - \`onOpen(listener)\` : appelé à chaque ouverture, reconnexions comprises (tout de suite si la socket est déjà ouverte). C'est là qu'on renvoie ce qui ne survit pas à une reconnexion, comme \`presence:view\`.
 - \`send(type, data)\` : envoie si la socket est ouverte, sinon ne fait rien.
@@ -282,7 +286,7 @@ ${NEXT_REALTIME_CLIENT}
 
 ### 3. Hook de présence
 
-\`hooks/use-presence.ts\` : une fine couche sur le client partagé. Au démontage, \`presence:leave\` puis relâchement de la connexion.
+\`hooks/use-presence.ts\` : une fine couche sur le client partagé. La liste est vidée quand \`dropId\` change. Au démontage, \`presence:leave\` puis relâchement de la connexion.
 
 \`\`\`tsx
 ${NEXT_PRESENCE_HOOK}
