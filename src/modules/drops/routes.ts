@@ -7,11 +7,11 @@ import { forbidden, notFound, validationFailed } from '../../errors.js';
 import { haversineMeters } from '../../geo.js';
 import { defineRoute } from '../../http/route.js';
 import { z } from '../../openapi/zod.js';
-import { CATEGORIES, DropSchema, EXAMPLES, idParams, intQuery, pageExample, pageSchema, paginationQuery } from '../../schemas.js';
+import { CATEGORIES, DropSchema, EXAMPLES, idParams, optionalIntQuery, pageExample, pageSchema, paginationQuery } from '../../schemas.js';
 import { latField, lngField } from './schemas.js';
 import { PublicUserSchema } from '../../schemas.js';
 import { toPublicUser } from '../users/repo.js';
-import { findDropRow, isVisibleTo, listDrops, paginate, toDrop } from './repo.js';
+import { findDropRow, isVisibleTo, listDrops, pageWindow, paginate, toDrop } from './repo.js';
 import { dropSchemas } from './schemas.js';
 
 const listQuery = paginationQuery.extend({
@@ -40,8 +40,8 @@ const radiusMessage = 'Doit être un entier entre 1 et 5000.';
 const extendedListQuery = (bboxMaxPageSize: number) =>
   paginationQuery.extend({
     ...listQuery.shape,
-    pageSize: intQuery(20, 1, Math.max(50, bboxMaxPageSize)).openapi({
-      description: `Éléments par page (1 à 50, jusqu'à ${Math.max(50, bboxMaxPageSize)} avec \`bbox\`).`,
+    pageSize: optionalIntQuery(1, Math.max(50, bboxMaxPageSize)).openapi({
+      description: `Éléments par page (1 à 50, jusqu'à ${Math.max(50, bboxMaxPageSize)} avec \`bbox\`, 20 par défaut dès que \`page\` ou \`pageSize\` est fourni). Sans \`page\` ni \`pageSize\`, tous les éléments sont renvoyés.`,
     }),
     sort: z
       .enum(['recent', 'popular', 'distance'], {
@@ -122,7 +122,7 @@ export function dropReadRoutes(config: Config) {
           ...toDrop(r, viewerId),
           ...(distances ? { distanceM: distances[i] } : {}),
         }));
-        return { body: paginate(items, total, query.page, query.pageSize) };
+        return { body: paginate(items, total, pageWindow(query.page, query.pageSize)) };
       },
     }),
     defineRoute({

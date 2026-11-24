@@ -69,9 +69,20 @@ export const intQuery = (def: number, min: number, max?: number) => {
   return s.default(def);
 };
 
+export const optionalIntQuery = (min: number, max?: number) => {
+  const message = max
+    ? `Doit être un entier entre ${min} et ${max}.`
+    : `Doit être un entier supérieur ou égal à ${min}.`;
+  let s = z.coerce.number({ invalid_type_error: message }).int(message).min(min, message);
+  if (max) s = s.max(max, message);
+  return s.optional();
+};
+
 export const paginationQuery = z.object({
-  page: intQuery(1, 1).openapi({ description: 'Numéro de page, à partir de 1.' }),
-  pageSize: intQuery(20, 1, 50).openapi({ description: 'Éléments par page (1 à 50).' }),
+  page: optionalIntQuery(1).openapi({
+    description: 'Numéro de page, à partir de 1. Sans `page` ni `pageSize`, tous les éléments sont renvoyés.',
+  }),
+  pageSize: optionalIntQuery(1, 50).openapi({ description: 'Éléments par page (1 à 50, 20 par défaut dès que `page` ou `pageSize` est fourni).' }),
 });
 
 export const PublicUserSchema = z

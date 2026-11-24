@@ -104,6 +104,7 @@ ${TYPES}
 Like et dislike s'excluent (drops et commentaires) : poser l'un retire l'autre. Les routes like/dislike renvoient \`ReactionState\` (\`LikeState\` pour les drops).
 Réponses : un seul niveau. \`GET /drops/:id/comments\` ne liste que les commentaires de premier niveau (\`parentId: null\`, avec \`repliesCount\`) ; \`GET /comments/:id/replies\` liste les réponses. \`POST /drops/:id/comments\` accepte \`parentId\` ; répondre à une réponse la rattache à la racine. Un commentaire supprimé qui a des réponses reste avec \`deleted: true\`, \`content: ""\` et un auteur anonymisé.
 Pagination : \`?page=1\` (≥1), \`?pageSize=20\` (1 à 50). Page au-delà de la fin : 200 avec \`items: []\`.
+Sans \`page\` ni \`pageSize\`, la liste complète est renvoyée (une seule page : \`page: 1\`, \`pageSize: total\`, \`totalPages: 1\`). Dès que l'un des deux est fourni, \`page\` vaut 1 et \`pageSize\` 20 par défaut.
 
 ## Routes
 

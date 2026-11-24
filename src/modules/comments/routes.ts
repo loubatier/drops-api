@@ -4,7 +4,7 @@ import { z } from '../../openapi/zod.js';
 import { defineRoute } from '../../http/route.js';
 import { CommentSchema, EXAMPLES, idParams, pageExample, pageSchema, paginationQuery } from '../../schemas.js';
 import type { Db } from '../../db/index.js';
-import { findDropRow, isVisibleTo, paginate } from '../drops/repo.js';
+import { findDropRow, isVisibleTo, pageWindow, paginate } from '../drops/repo.js';
 import { viewableDrop } from '../drops/routes.js';
 import { toPublicUser } from '../users/repo.js';
 
@@ -66,12 +66,17 @@ export const findComment = (db: Db, id: number, viewerId: number | null): Commen
   return row && toComment(row, viewerId);
 };
 
-function listComments(db: Db, where: string, params: Record<string, number>, query: { page: number; pageSize: number }, viewerId: number | null) {
+function listComments(db: Db, where: string, params: Record<string, number>, query: { page?: number | undefined; pageSize?: number | undefined }, viewerId: number | null) {
   const total = (db.prepare(`SELECT COUNT(*) AS n FROM comments c WHERE ${where}`).get(params) as { n: number }).n;
+  const window = pageWindow(query.page, query.pageSize);
   const rows = db
-    .prepare(`${SELECT_COMMENT} WHERE ${where} ORDER BY c.created_at ASC, c.id ASC LIMIT @limit OFFSET @offset`)
-    .all({ ...params, me: viewerId ?? 0, limit: query.pageSize, offset: (query.page - 1) * query.pageSize }) as CommentRow[];
-  return paginate(rows.map((r) => toComment(r, viewerId)), total, query.page, query.pageSize);
+    .prepare(`${SELECT_COMMENT} WHERE ${where} ORDER BY c.created_at ASC, c.id ASC${window ? ' LIMIT @limit OFFSET @offset' : ''}`)
+    .all(
+      window
+        ? { ...params, me: viewerId ?? 0, limit: window.pageSize, offset: (window.page - 1) * window.pageSize }
+        : { ...params, me: viewerId ?? 0 },
+    ) as CommentRow[];
+  return paginate(rows.map((r) => toComment(r, viewerId)), total, window);
 }
 
 const commentOf = (db: Db, id: number, viewerId: number | null) => {

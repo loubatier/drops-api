@@ -10,8 +10,15 @@ const DROP_KEYS = [
 describe('GET /drops', () => {
   const { api, db } = buildSeededApp();
 
-  it('renvoie la première page avec la pagination', async () => {
+  it('renvoie tous les drops sans paramètre de pagination', async () => {
     const res = await api.get('/drops');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ page: 1, pageSize: 60, total: 60, totalPages: 1 });
+    expect(res.body.items).toHaveLength(60);
+  });
+
+  it('renvoie la première page avec la pagination', async () => {
+    const res = await api.get('/drops?page=1');
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ page: 1, pageSize: 20, total: 60, totalPages: 3 });
     expect(res.body.items).toHaveLength(20);
@@ -227,7 +234,8 @@ describe('GET /drops/:id/comments', () => {
       .get() as { drop_id: number; n: number };
     const res = await api.get(`/drops/${row.drop_id}/comments`);
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ page: 1, pageSize: 20, total: row.n });
+    expect(res.body).toMatchObject({ page: 1, pageSize: row.n, total: row.n, totalPages: 1 });
+    expect(res.body.items).toHaveLength(row.n);
     const dates = res.body.items.map((c: any) => c.createdAt);
     expect(dates).toEqual([...dates].sort());
     const comment = res.body.items[0];

@@ -84,8 +84,8 @@ export interface DropFilters {
   category?: string;
   author?: string;
   sort: 'recent' | 'popular' | 'distance';
-  page: number;
-  pageSize: number;
+  page?: number | undefined;
+  pageSize?: number | undefined;
   near?: Near;
   bbox?: Bbox;
 }
@@ -134,6 +134,7 @@ export function listDrops(db: Db, f: DropFilters, viewerId: number | null) {
     Object.assign(params, rect);
   }
   const clause = `WHERE ${where.join(' AND ')}`;
+  const window = pageWindow(f.page, f.pageSize);
   const order =
     f.sort === 'popular' ? 'likes_count DESC, d.created_at DESC, d.id DESC' : 'd.created_at DESC, d.id DESC';
 
@@ -144,8 +145,8 @@ export function listDrops(db: Db, f: DropFilters, viewerId: number | null) {
         .get(params) as { n: number }
     ).n;
     const rows = db
-      .prepare(`${SELECT_DROP} ${clause} ORDER BY ${order} LIMIT @limit OFFSET @offset`)
-      .all({ ...params, limit: f.pageSize, offset: (f.page - 1) * f.pageSize }) as DropRow[];
+      .prepare(`${SELECT_DROP} ${clause} ORDER BY ${order}${window ? ' LIMIT @limit OFFSET @offset' : ''}`)
+      .all(window ? { ...params, limit: window.pageSize, offset: (window.page - 1) * window.pageSize } : params) as DropRow[];
     return { rows, total, distances: null as number[] | null };
   }
 
@@ -163,7 +164,7 @@ export function listDrops(db: Db, f: DropFilters, viewerId: number | null) {
     }
   }
   if (f.sort === 'distance') kept.sort((a, b) => a.distance - b.distance);
-  const slice = kept.slice((f.page - 1) * f.pageSize, f.page * f.pageSize);
+  const slice = window ? kept.slice((window.page - 1) * window.pageSize, window.page * window.pageSize) : kept;
   return {
     rows: slice.map((k) => k.row),
     total: kept.length,
@@ -171,10 +172,19 @@ export function listDrops(db: Db, f: DropFilters, viewerId: number | null) {
   };
 }
 
-export const paginate = <T>(items: T[], total: number, page: number, pageSize: number) => ({
-  items,
-  page,
-  pageSize,
-  total,
-  totalPages: Math.ceil(total / pageSize),
-});
+export interface PageWindow {
+  page: number;
+  pageSize: number;
+}
+
+export const DEFAULT_PAGE_SIZE = 20;
+
+export const pageWindow = (page?: number, pageSize?: number): PageWindow | null =>
+  page === undefined && pageSize === undefined
+    ? null
+    : { page: page ?? 1, pageSize: pageSize ?? DEFAULT_PAGE_SIZE };
+
+export const paginate = <T>(items: T[], total: number, window: PageWindow | null) =>
+  window
+    ? { items, page: window.page, pageSize: window.pageSize, total, totalPages: Math.ceil(total / window.pageSize) }
+    : { items, page: 1, pageSize: total, total, totalPages: total > 0 ? 1 : 0 };

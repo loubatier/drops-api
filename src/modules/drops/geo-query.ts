@@ -38,7 +38,7 @@ export interface GeoParams {
   bbox?: string | undefined;
   sortGiven: boolean;
   sort: string;
-  pageSize: number;
+  pageSize?: number | undefined;
 }
 
 export function resolveGeo(p: GeoParams, bboxMaxPageSize: number) {
@@ -64,7 +64,7 @@ export function resolveGeo(p: GeoParams, bboxMaxPageSize: number) {
   if (p.radius !== undefined && p.near === undefined) add('radius', 'radius ne s’utilise qu’avec near.');
   if (p.sort === 'distance' && p.sortGiven && p.near === undefined) add('sort', 'sort=distance exige near.');
   const maxPageSize = p.bbox !== undefined ? Math.max(50, bboxMaxPageSize) : 50;
-  if (p.pageSize > maxPageSize) {
+  if (p.pageSize !== undefined && p.pageSize > maxPageSize) {
     add('pageSize', `Doit être un entier entre 1 et ${maxPageSize}.`);
   }
   if (Object.keys(fields).length > 0) throw validationFailed(fields);
