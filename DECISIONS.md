@@ -150,3 +150,20 @@ Source : `spec-api-drops-temps-reel-J4.md`. T0 (P3 à P5) était déjà livré.
 - Les tests « bloc 2 désactivé » sont supprimés. Le test de contrat garde la vérification que le bloc 1 reste présent et inchangé dans l'OpenAPI et le `contract.md`.
 - `/contract.md` dépasse l'ancien plafond de 150 lignes (174) : le plafond passe à 200.
 - Une ligne `block2Enabled` laissée dans la table `settings` en production est ignorée.
+
+## Zone supprimée, réponses et dislikes
+
+- **Plus de restriction de zone** : `POST /drops` et `PATCH /drops/{id}` n'acceptent plus seulement les points à 3 km du département MMI ; seules les bornes de latitude et de longitude restent contrôlées (toujours sous `location`). `ZONE_CENTER` et `ZONE_RADIUS_M` restent pour le jeu de données d'exemple et le simulateur. L'argument éthique du domicile ne figure plus dans la documentation.
+- **Réponses** : un seul niveau. `POST /drops/{id}/comments` accepte `parentId` ; si `parentId` désigne une réponse, la nouvelle est rattachée au commentaire racine, et l'ordre est celui de `createdAt`. `GET /drops/{id}/comments` ne renvoie plus que les commentaires de premier niveau (avec `repliesCount`) ; les réponses sont sur `GET /comments/{id}/replies`. `commentsCount` d'un drop compte commentaires et réponses.
+- **Suppression** : un commentaire de premier niveau qui a des réponses est conservé (`deleted: true`, contenu vide, auteur anonymisé `deleted`, réactions effacées) et diffusé en `comment:updated` ; il disparaît avec sa dernière réponse. Sans réponse, ou pour une réponse, la suppression est définitive (`comment:deleted`).
+- **Dislikes** : sur les drops (`/drops/{id}/dislike`) et sur les commentaires (`/comments/{id}/like` et `/dislike`). Like et dislike sont exclusifs : poser l'un retire l'autre. Tables `dislikes` et `comment_reactions` (une ligne par utilisateur et commentaire, `kind` like ou dislike) ; colonnes `parent_id` et `deleted` ajoutées à `comments` au démarrage si absentes.
+- **Contrat du bloc 1 modifié** : `Drop` (`dislikesCount`, `dislikedByMe`), `LikeState` (`disliked`, `dislikesCount`) et `Comment` (`parentId`, `deleted`, `repliesCount`, compteurs de réactions) gagnent des champs obligatoires dans les réponses, ce que le test de contrat refuse sur les listes `required` : les trois schémas de `tests/contract/openapi-block1.json` ont été régénérés. Aucun champ n'est retiré. Le comportement de `GET /drops/{id}/comments` change (premier niveau seulement).
+- **WebSocket** : `like:updated` ajoute `dislikesCount` ; nouveau message `comment:updated` `{ comment }`.
+
+## Verrouillage et ouverture supprimés
+
+- **Retirés** : `lockMode` / `LOCK_MODE`, drops verrouillés (`content` et `imageUrl` à `null`, position arrondie), code 403 `drop_locked`, `POST /drops/{id}/open`, `GET /drops/{id}/opens`, code 403 `too_far` et `error.meta`, `OPEN_RADIUS_M`, `OPEN_ACCURACY_CAP_M`, `RATE_LIMIT_OPEN_PER_MIN` (et la classe de limite `open`), la table `opens`, `GET` et `PATCH /admin/settings` (qui ne réglaient plus que `lockMode`), la table `settings`, et côté WebSocket `drop:opened`, `settings:updated`, la notification `drop_opened` et `lockMode` dans `hello`.
+- **Drop** : `locked`, `openedByMe`, `opensCount` et `location.precision` n'existent plus ; la position est toujours exacte. Le schéma `Drop` du bloc 1 est de nouveau régénéré dans `tests/contract/openapi-block1.json`, comme à la révision précédente.
+- **Simulateur** : plus d'action « ouverture » (like 60 %, commentaire 35 %, création 5 %). L'état du simulateur se lit dans la réponse de `POST /admin/simulator`.
+- **Base existante** : les tables `opens` et `settings` d'une base déjà déployée restent en place, inutilisées ; `POST /admin/reset` ne les vide plus.
+- **Zone et ouverture** : `ZONE_CENTER` / `ZONE_RADIUS_M` restent pour le jeu d'exemple et le simulateur.

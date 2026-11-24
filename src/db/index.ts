@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS likes (
   created_at TEXT NOT NULL,
   PRIMARY KEY (drop_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS dislikes (
+  drop_id INTEGER NOT NULL REFERENCES drops(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (drop_id, user_id)
+);
 CREATE TABLE IF NOT EXISTS comments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   drop_id INTEGER NOT NULL REFERENCES drops(id) ON DELETE CASCADE,
@@ -47,11 +53,12 @@ CREATE TABLE IF NOT EXISTS comments (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_comments_drop_id ON comments (drop_id);
-CREATE TABLE IF NOT EXISTS opens (
-  drop_id INTEGER NOT NULL REFERENCES drops(id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS comment_reactions (
+  comment_id INTEGER NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  opened_at TEXT NOT NULL,
-  PRIMARY KEY (drop_id, user_id)
+  kind TEXT NOT NULL CHECK (kind IN ('like', 'dislike')),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (comment_id, user_id)
 );
 CREATE TABLE IF NOT EXISTS reports (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,10 +72,6 @@ CREATE TABLE IF NOT EXISTS reports (
 CREATE TABLE IF NOT EXISTS revoked_tokens (
   jti TEXT PRIMARY KEY,
   expires_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS settings (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL
 );
 `;
 
@@ -89,6 +92,16 @@ export function openDb(path: string): Db {
   return db;
 }
 
+const COMMENT_COLUMNS = [
+  { name: 'parent_id', ddl: 'parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE' },
+  { name: 'deleted', ddl: 'deleted INTEGER NOT NULL DEFAULT 0' },
+];
+
 export function migrate(db: Db): void {
   db.exec(SCHEMA);
+  const existing = new Set((db.prepare('PRAGMA table_info(comments)').all() as { name: string }[]).map((c) => c.name));
+  for (const column of COMMENT_COLUMNS) {
+    if (!existing.has(column.name)) db.exec(`ALTER TABLE comments ADD COLUMN ${column.ddl}`);
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON comments (parent_id)');
 }

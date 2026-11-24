@@ -13,13 +13,18 @@ interface Profile extends PublicUser {
 }
 interface Drop {
   id: number; title: string; content: string | null; category: Category; imageUrl: string | null;
-  location: { lat: number; lng: number; precision: 'exact' | 'approx' };
-  locked: boolean; hidden: boolean; author: PublicUser;
-  likesCount: number; commentsCount: number; opensCount: number;
-  likedByMe: boolean; openedByMe: boolean; isMine: boolean;
+  location: { lat: number; lng: number };
+  hidden: boolean; author: PublicUser;
+  likesCount: number; dislikesCount: number; commentsCount: number;
+  likedByMe: boolean; dislikedByMe: boolean; isMine: boolean;
   createdAt: string; updatedAt: string;
 }
-interface Comment { id: number; dropId: number; content: string; author: PublicUser; isMine: boolean; createdAt: string }
+interface Comment {
+  id: number; dropId: number; parentId: number | null; content: string; author: PublicUser; isMine: boolean;
+  deleted: boolean; repliesCount: number; likesCount: number; dislikesCount: number;
+  likedByMe: boolean; dislikedByMe: boolean; createdAt: string;
+}
+interface ReactionState { liked: boolean; disliked: boolean; likesCount: number; dislikesCount: number }
 interface CategoryItem { id: Category; label: string }
 interface Page<T> { items: T[]; page: number; pageSize: number; total: number; totalPages: number }
 interface AuthResponse { user: PrivateUser; token: string; expiresAt: string }
@@ -41,23 +46,13 @@ const ACCESS_LABEL = {
 const BLOCK2_SECTION = `
 ## Bloc 2
 
-Tout est additif : rien du bloc 1 ne change. \`Drop.distanceM?: number\` n'existe que si la requête utilise \`near\`. Les erreurs peuvent porter \`error.meta?: object\`.
-Nouveaux codes : 403 too_far, 403 drop_locked.
+Tout est additif : rien du bloc 1 ne change. \`Drop.distanceM?: number\` n'existe que si la requête utilise \`near\`.
 
 ### Géolocalisation (GET /drops)
 
 - \`near=lat,lng\` + \`radius\` (1 à 5000 m, défaut 1000) : drops dans le rayon, \`distanceM\` ajouté. \`sort=distance\` (défaut avec near) n'existe qu'avec near.
 - \`bbox=minLng,minLat,maxLng,maxLat\` : **longitude d'abord** (ordre GeoJSON, pas celui de Leaflet). \`pageSize\` jusqu'à 200 avec bbox.
 - near et bbox s'excluent (422 sur les deux) ; radius sans near : 422 sur radius. Se combinent avec q, category, author, page.
-
-### Ouverture et verrouillage
-
-- \`POST /drops/:id/open\` { lat, lng, accuracy? } : accepté à moins de 50 m + min(accuracy, 50). Sinon 403 too_far, \`meta: { distanceM, requiredM }\`.
-  La position envoyée n'est ni stockée, ni journalisée, ni diffusée. Elle est déclarée par le client : elle se simule dans les DevTools.
-- \`GET /drops/:id/opens\` : auteur seulement (403 sinon).
-- Avec lockMode on, un drop que l'on n'a ni écrit ni ouvert (et tout drop pour un visiteur) est verrouillé : \`locked: true\`, \`content\` et \`imageUrl\` \`null\`,
-  position arrondie à 3 décimales, \`precision: 'approx'\`. Commentaires et likes : 403 drop_locked. \`q\` ne cherche que dans le titre et l'auteur.
-  near, bbox et distanceM utilisent alors la position approchée. lockMode off : rien ne change. Le changement arrive en direct (\`settings:updated\`).
 
 ### Jeu de données
 
@@ -78,7 +73,7 @@ ${PRESENCE_STEPS}
 2. Navigateur : ouvrir \`url\` (\`/ws?ticket=wst_…\`). Ticket absent, expiré ou déjà utilisé : HTTP 401 au format d'erreur, pendant le handshake.
 3. Messages JSON \`{ type, data }\`. Message illisible ou inconnu : message \`error\`, sans fermeture.
 4. Fermetures serveur : 4001 session_expired · 4008 rate_limited (20 messages / 10 s) · 4009 too_many_connections (5 max, la plus ancienne est fermée) · 4010 server_restart · 4011 admin_disconnect.
-5. Chaque Drop et Comment diffusé est construit pour son destinataire (isMine, likedByMe, verrouillage). Drops masqués : diffusés à leur auteur seulement, les autres reçoivent drop:deleted.
+5. Chaque Drop et Comment diffusé est construit pour son destinataire (isMine, likedByMe, dislikedByMe). Drops masqués : diffusés à leur auteur seulement, les autres reçoivent drop:deleted.
 6. Notifications : à l'auteur du drop uniquement, jamais pour ses propres actions. Aucune position d'utilisateur ne transite par le WebSocket.
 
 \`\`\`ts
@@ -105,7 +100,9 @@ Doc interactive : /docs. Spécification : /openapi.json.
 ${TYPES}
 \`\`\`
 
-\`likedByMe\`, \`openedByMe\`, \`isMine\` sont calculés pour l'utilisateur du token. \`hidden\` n'est \`true\` que pour l'auteur.
+\`likedByMe\`, \`dislikedByMe\`, \`isMine\` sont calculés pour l'utilisateur du token. \`hidden\` n'est \`true\` que pour l'auteur.
+Like et dislike s'excluent (drops et commentaires) : poser l'un retire l'autre. Les routes like/dislike renvoient \`ReactionState\` (\`LikeState\` pour les drops).
+Réponses : un seul niveau. \`GET /drops/:id/comments\` ne liste que les commentaires de premier niveau (\`parentId: null\`, avec \`repliesCount\`) ; \`GET /comments/:id/replies\` liste les réponses. \`POST /drops/:id/comments\` accepte \`parentId\` ; répondre à une réponse la rattache à la racine. Un commentaire supprimé qui a des réponses reste avec \`deleted: true\`, \`content: ""\` et un auteur anonymisé.
 Pagination : \`?page=1\` (≥1), \`?pageSize=20\` (1 à 50). Page au-delà de la fin : 200 avec \`items: []\`.
 
 ## Routes
@@ -123,7 +120,7 @@ Format unique, \`fields\` toujours présent (clé = champ du corps ou paramètre
 
 400 bad_request · 401 unauthorized, invalid_token, token_expired, token_revoked, invalid_credentials · 403 forbidden
 404 not_found · 409 conflict · 422 validation_failed · 429 rate_limited (Retry-After) · 500 internal_error · 503 service_unavailable
-Erreurs de coordonnées (type, bornes, zone de 3 km autour du département MMI) : toujours sous la clé \`location\`.
+Erreurs de coordonnées (type, bornes ; aucune restriction de zone) : toujours sous la clé \`location\`.
 
 ## Outils pédagogiques
 

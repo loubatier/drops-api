@@ -21,27 +21,6 @@ afterEach(async () => {
 });
 
 describe('réglages et documentation', () => {
-  it('/admin/settings se lit et se modifie', async () => {
-    const { api } = buildTestApp();
-    const read = await api.get('/admin/settings').set(ADMIN);
-    expect(read.body).toEqual({
-      lockMode: 'off',
-      simulator: { enabled: false, intervalSeconds: 20, presence: true },
-    });
-    const locked = await api.patch('/admin/settings').set(ADMIN).send({ lockMode: 'on' });
-    expect(locked.status).toBe(200);
-    expect(locked.body).toMatchObject({ lockMode: 'on' });
-  });
-
-  it('/admin/settings exige la clé admin et refuse les champs inconnus', async () => {
-    const { api } = buildTestApp();
-    expect((await api.get('/admin/settings')).status).toBe(403);
-    const bad = await api.patch('/admin/settings').set(ADMIN).send({ nope: 1 });
-    expect(bad.status).toBe(422);
-    expect(bad.body.error.fields.nope).toEqual(['Champ inconnu.']);
-    expect((await api.patch('/admin/settings').set(ADMIN).send({})).status).toBe(422);
-  });
-
   it('chaque route figure dans /openapi.json', async () => {
     const { api, app } = buildTestApp();
     const doc = (await api.get('/openapi.json')).body;
@@ -133,7 +112,7 @@ describe('WebSocket', () => {
     const hello = client.messages[0]!;
     expect(hello.type).toBe('hello');
     expect(hello.data.user).toEqual({ id: user.id, username: 'demo', displayName: user.displayName, avatarUrl: null });
-    expect(hello.data.lockMode).toBe('off');
+    expect(hello.data).not.toHaveProperty('lockMode');
     expect(new Date(hello.data.serverTime).getTime()).not.toBeNaN();
     client.send('ping');
     expect((await client.next('pong')).data.serverTime).toBeTypeOf('string');
@@ -145,7 +124,7 @@ describe('WebSocket', () => {
     const b = await connectAs(server, 'lea');
     const created = await server.api.post('/drops').set(bearer(a.token)).send(dropBody);
     const atB = await b.client.next('drop:created');
-    expect(atB.data.drop).toMatchObject({ id: created.body.id, title: 'Un drop en direct', isMine: false, locked: false });
+    expect(atB.data.drop).toMatchObject({ id: created.body.id, title: 'Un drop en direct', isMine: false });
     const atA = await a.client.next('drop:created');
     expect(atA.data.drop.isMine).toBe(true);
 
@@ -161,7 +140,7 @@ describe('WebSocket', () => {
     const b = await connectAs(server, 'lea');
     const drop = (await server.api.post('/drops').set(bearer(a.token)).send(dropBody)).body;
     await server.api.post(`/drops/${drop.id}/like`).set(bearer(b.token));
-    expect((await a.client.next('like:updated')).data).toEqual({ dropId: drop.id, likesCount: 1 });
+    expect((await a.client.next('like:updated')).data).toEqual({ dropId: drop.id, likesCount: 1, dislikesCount: 0 });
     const comment = (await server.api.post(`/drops/${drop.id}/comments`).set(bearer(b.token)).send({ content: 'Top' })).body;
     const received = await a.client.next('comment:created');
     expect(received.data.comment).toMatchObject({ id: comment.id, dropId: drop.id, isMine: false });
@@ -315,37 +294,6 @@ describe('WebSocket', () => {
 });
 
 describe('sérialisation par destinataire', () => {
-  it('avec lockMode à on, un drop créé par A arrive verrouillé chez B et complet chez A', async () => {
-    server = await startServer();
-    const a = await connectAs(server, 'demo');
-    const b = await connectAs(server, 'lea');
-    await server.api.patch('/admin/settings').set(ADMIN).send({ lockMode: 'on' });
-    expect((await b.client.next('settings:updated')).data).toEqual({ lockMode: 'on' });
-    expect((await a.client.next('settings:updated')).data).toEqual({ lockMode: 'on' });
-
-    await server.api.post('/drops').set(bearer(a.token)).send({ ...dropBody, content: 'Secret du drop' });
-    const atB = (await b.client.next('drop:created')).data.drop;
-    expect(atB).toMatchObject({ locked: true, content: null, imageUrl: null, isMine: false });
-    expect(atB.location.precision).toBe('approx');
-    expect(JSON.stringify(b.client.messages)).not.toContain('Secret du drop');
-    const atA = (await a.client.next('drop:created')).data.drop;
-    expect(atA).toMatchObject({ locked: false, content: 'Secret du drop', isMine: true });
-    expect(atA.location).toEqual({ lat: 47.4955, lng: 6.8053, precision: 'exact' });
-  });
-
-  it('les commentaires d’un drop verrouillé ne sont pas diffusés à qui ne l’a pas ouvert', async () => {
-    server = await startServer();
-    const a = await connectAs(server, 'demo');
-    const b = await connectAs(server, 'lea');
-    const drop = (await server.api.post('/drops').set(bearer(a.token)).send(dropBody)).body;
-    await server.api.patch('/admin/settings').set(ADMIN).send({ lockMode: 'on' });
-    await server.api.post(`/drops/${drop.id}/comments`).set(bearer(a.token)).send({ content: 'Indice caché' });
-    await a.client.next('comment:created');
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(b.client.count('comment:created')).toBe(0);
-    expect(JSON.stringify(b.client.messages)).not.toContain('Indice caché');
-  });
-
   it('un drop masqué n’est diffusé qu’à son auteur, les autres reçoivent drop:deleted', async () => {
     server = await startServer({ reportHideThreshold: 1 });
     const a = await connectAs(server, 'demo');

@@ -2,6 +2,9 @@
 
 Suite de `SPEC.md` (bloc 1), déjà livré et en production. Ce document est la commande complète du bloc 2. Les règles du bloc 1 (section 1 de `SPEC.md`) restent valables : contrat exact, pas de fonctionnalité en plus, messages en français, `DECISIONS.md`, tests verts avant chaque déploiement.
 
+
+> **Révision** : le verrouillage (`lockMode`, `locked`, position approchée, `drop_locked`), l'ouverture des drops (`POST /drops/{id}/open`, `GET /drops/{id}/opens`, `too_far`, `error.meta`, `drop:opened`, `settings:updated`) et `/admin/settings` ont été supprimés (voir `DECISIONS.md`). Les sections correspondantes ci-dessous sont conservées pour l'historique.
+
 ---
 
 ## 0. Contexte, mission et échéances

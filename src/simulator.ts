@@ -1,14 +1,11 @@
 import type { Config } from './config.js';
 import type { Db } from './db/index.js';
-import { findDropRow, isLockedFor, isVisibleTo } from './modules/drops/repo.js';
-import { recordOpen } from './modules/drops/open.js';
 import { SIM_COMMENTS, SIM_DROPS } from './simulator-data.js';
 import { addComment, createDrop, setLike } from './services.js';
-import type { Settings } from './settings.js';
 import type { SimulatedPresence } from './realtime/hub.js';
 import { toPublicUser } from './modules/users/repo.js';
 
-export type SimulatorAction = 'like' | 'comment' | 'open' | 'create';
+export type SimulatorAction = 'like' | 'comment' | 'create';
 
 export interface SimulatorState {
   enabled: boolean;
@@ -47,9 +44,8 @@ interface DropIds {
 }
 
 const WEIGHTS: [SimulatorAction, number][] = [
-  ['like', 50],
-  ['comment', 30],
-  ['open', 15],
+  ['like', 60],
+  ['comment', 35],
   ['create', 5],
 ];
 
@@ -60,7 +56,6 @@ const DEFAULT_PRESENCE_TIMING: PresenceTiming = { tickMs: 15_000, minStayMs: 30_
 export function createSimulator(
   config: Config,
   db: Db,
-  settings: Settings,
   options: SimulatorOptions = {},
 ): SimulatorControl {
   const rng = options.rng ?? Math.random;
@@ -87,13 +82,8 @@ export function createSimulator(
         .all() as DropIds[]
     ).filter((d) => d.author_id !== actorId || !seedAuthorsOnly);
 
-  const unlockedFor = (dropId: number, actorId: number) => {
-    const row = findDropRow(db, dropId, actorId);
-    return row !== undefined && isVisibleTo(row, actorId) && !isLockedFor(row, actorId, settings.lockMode());
-  };
-
   const like = (actorId: number): string | null => {
-    const options = candidates(actorId, false).filter((d) => unlockedFor(d.id, actorId));
+    const options = candidates(actorId, false);
     const target = pick(options);
     if (!target) return null;
     const already = db.prepare('SELECT 1 FROM likes WHERE drop_id = ? AND user_id = ?').get(target.id, actorId) !== undefined;
@@ -102,24 +92,12 @@ export function createSimulator(
   };
 
   const comment = (actorId: number): string | null => {
-    const options = candidates(actorId, true).filter((d) => unlockedFor(d.id, actorId));
+    const options = candidates(actorId, true);
     const target = pick(options);
     const text = pick(SIM_COMMENTS);
     if (!target || !text) return null;
     addComment(db, target.id, actorId, text);
     return `comment:${target.id}`;
-  };
-
-  const open = (actorId: number): string | null => {
-    const options = candidates(actorId, false).filter(
-      (d) =>
-        d.author_id !== actorId &&
-        db.prepare('SELECT 1 FROM opens WHERE drop_id = ? AND user_id = ?').get(d.id, actorId) === undefined,
-    );
-    const target = pick(options);
-    if (!target) return null;
-    recordOpen(db, target.id, actorId);
-    return `open:${target.id}`;
   };
 
   const create = (actorId: number): string | null => {
@@ -131,11 +109,11 @@ export function createSimulator(
     const lng = Number(
       (config.zone.lng + (radius * Math.sin(theta)) / (111_320 * Math.cos((config.zone.lat * Math.PI) / 180))).toFixed(5),
     );
-    const drop = createDrop(db, actorId, { ...template, lat, lng }, settings.lockMode(), true);
+    const drop = createDrop(db, actorId, { ...template, lat, lng }, true);
     return `create:${drop.id}`;
   };
 
-  const actions: Record<SimulatorAction, (actorId: number) => string | null> = { like, comment, open, create };
+  const actions: Record<SimulatorAction, (actorId: number) => string | null> = { like, comment, create };
 
   const chooseAction = (): SimulatorAction => {
     const total = WEIGHTS.reduce((sum, [, w]) => sum + w, 0);

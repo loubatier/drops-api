@@ -74,14 +74,9 @@ export async function runSmokeBlock2(
     id: 0,
   }));
   const [a, b] = accounts as [(typeof accounts)[number], (typeof accounts)[number]];
-  const state: {
-    initial: { lockMode: 'on' | 'off' } | null;
-    socketA: Socket | null;
-    socketB: Socket | null;
-  } = { initial: null, socketA: null, socketB: null };
+  const state: { socketA: Socket | null; socketB: Socket | null } = { socketA: null, socketB: null };
   const created: { id: number; token: string }[] = [];
   let dropOne = 0;
-  let dropTwo = 0;
 
   const call = async (method: string, path: string, options: { body?: unknown; token?: string; admin?: boolean } = {}) => {
     const headers: Record<string, string> = {};
@@ -127,19 +122,6 @@ export async function runSmokeBlock2(
 
   const steps: Step[] = [
     {
-      name: 'réglages lus, lockMode mis sur off',
-      run: async () => {
-        const res = await call('GET', '/admin/settings', { admin: true });
-        expectStatus(res.status, 200, 'GET /admin/settings');
-        const initial = { lockMode: res.json.lockMode as 'on' | 'off' };
-        state.initial = initial;
-        if (initial.lockMode === 'on') {
-          const patch = await call('PATCH', '/admin/settings', { admin: true, body: { lockMode: 'off' } });
-          expectStatus(patch.status, 200, 'PATCH lockMode off');
-        }
-      },
-    },
-    {
       name: 'deux comptes, deux WebSocket : le drop de A arrive chez B',
       run: async () => {
         for (const account of accounts) {
@@ -172,32 +154,20 @@ export async function runSmokeBlock2(
       },
     },
     {
-      name: 'B ouvre de près (200), puis de loin sur un autre drop (403 too_far)',
+      name: 'B dislike le drop de A : A reçoit like:updated avec dislikesCount, puis B répond à un commentaire',
       run: async () => {
-        const open = await call('POST', `/drops/${dropOne}/open`, { token: b.token, body: { lat: ZONE.lat, lng: ZONE.lng } });
-        expectStatus(open.status, 200, 'open de près');
-        if (open.json.openedByMe !== true) throw new Error('openedByMe attendu');
-        const second = await createDrop(a, 'Drop de fumée 2');
-        dropTwo = second.id;
-        const far = await call('POST', `/drops/${dropTwo}/open`, {
-          token: b.token,
-          body: { lat: ZONE.lat + 500 / M_PER_DEG, lng: ZONE.lng },
-        });
-        expectStatus(far.status, 403, 'open de loin');
-        if (far.json?.error?.code !== 'too_far' || !far.json?.error?.meta?.distanceM) throw new Error('too_far avec meta attendu');
-      },
-    },
-    {
-      name: 'lockMode on : B reçoit settings:updated et un drop non ouvert est verrouillé',
-      run: async () => {
-        const patch = await call('PATCH', '/admin/settings', { admin: true, body: { lockMode: 'on' } });
-        expectStatus(patch.status, 200, 'PATCH lockMode on');
-        await state.socketB!.next((m) => m.type === 'settings:updated' && m.data.lockMode === 'on', 'settings:updated');
-        const locked = await call('GET', `/drops/${dropTwo}`, { token: b.token });
-        expectStatus(locked.status, 200, 'GET drop verrouillé');
-        if (locked.json.locked !== true || locked.json.content !== null) throw new Error('drop non verrouillé');
-        const opened = await call('GET', `/drops/${dropOne}`, { token: b.token });
-        if (opened.json.locked !== false) throw new Error('le drop ouvert par B devrait être déverrouillé');
+        const dislike = await call('POST', `/drops/${dropOne}/dislike`, { token: b.token });
+        expectStatus(dislike.status, 200, 'POST dislike');
+        if (dislike.json.disliked !== true || dislike.json.dislikesCount !== 1) throw new Error('état du dislike inattendu');
+        await state.socketA!.next(
+          (m) => m.type === 'like:updated' && m.data.dropId === dropOne && m.data.dislikesCount === 1,
+          'like:updated chez A',
+        );
+        const root = await call('POST', `/drops/${dropOne}/comments`, { token: a.token, body: { content: 'Racine' } });
+        expectStatus(root.status, 201, 'POST commentaire');
+        const reply = await call('POST', `/drops/${dropOne}/comments`, { token: b.token, body: { content: 'Réponse', parentId: root.json.id } });
+        expectStatus(reply.status, 201, 'POST réponse');
+        if (reply.json.parentId !== root.json.id) throw new Error('parentId attendu sur la réponse');
       },
     },
     {
@@ -252,20 +222,11 @@ export async function runSmokeBlock2(
   try {
     state.socketA?.close();
     state.socketB?.close();
-    const initial = state.initial;
-    if (initial) {
-      const restore = await call('PATCH', '/admin/settings', { admin: true, body: { lockMode: 'off' } });
-      expectStatus(restore.status, 200, 'restauration de lockMode');
-      if (initial.lockMode === 'on') {
-        const final = await call('PATCH', '/admin/settings', { admin: true, body: { lockMode: 'on' } });
-        expectStatus(final.status, 200, 'restauration des réglages');
-      }
-    }
     for (const drop of created) {
       const del = await call('DELETE', `/drops/${drop.id}`, { token: drop.token });
       expectStatus(del.status, 204, 'DELETE drop');
     }
-    log('✅ réglages restaurés et drops supprimés (les deux comptes de fumée restent en base)');
+    log('✅ drops supprimés (les deux comptes de fumée restent en base)');
   } catch (err) {
     ok = false;
     log(`❌ restauration : ${err instanceof Error ? err.message : String(err)}`);

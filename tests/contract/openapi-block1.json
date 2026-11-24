@@ -379,23 +379,12 @@
               },
               "lng": {
                 "type": "number"
-              },
-              "precision": {
-                "type": "string",
-                "enum": [
-                  "exact",
-                  "approx"
-                ]
               }
             },
             "required": [
               "lat",
-              "lng",
-              "precision"
+              "lng"
             ]
-          },
-          "locked": {
-            "type": "boolean"
           },
           "hidden": {
             "type": "boolean"
@@ -406,16 +395,16 @@
           "likesCount": {
             "type": "integer"
           },
-          "commentsCount": {
+          "dislikesCount": {
             "type": "integer"
           },
-          "opensCount": {
+          "commentsCount": {
             "type": "integer"
           },
           "likedByMe": {
             "type": "boolean"
           },
-          "openedByMe": {
+          "dislikedByMe": {
             "type": "boolean"
           },
           "isMine": {
@@ -426,6 +415,10 @@
           },
           "updatedAt": {
             "type": "string"
+          },
+          "distanceM": {
+            "type": "integer",
+            "description": "Distance en mètres. Présent uniquement quand la requête utilise `near`."
           }
         },
         "required": [
@@ -435,14 +428,13 @@
           "category",
           "imageUrl",
           "location",
-          "locked",
           "hidden",
           "author",
           "likesCount",
+          "dislikesCount",
           "commentsCount",
-          "opensCount",
           "likedByMe",
-          "openedByMe",
+          "dislikedByMe",
           "isMine",
           "createdAt",
           "updatedAt"
@@ -484,13 +476,21 @@
           "liked": {
             "type": "boolean"
           },
+          "disliked": {
+            "type": "boolean"
+          },
           "likesCount": {
+            "type": "integer"
+          },
+          "dislikesCount": {
             "type": "integer"
           }
         },
         "required": [
           "liked",
-          "likesCount"
+          "disliked",
+          "likesCount",
+          "dislikesCount"
         ]
       },
       "Comment": {
@@ -502,13 +502,40 @@
           "dropId": {
             "type": "integer"
           },
+          "parentId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Commentaire racine auquel celui-ci répond, `null` pour un commentaire de premier niveau."
+          },
           "content": {
-            "type": "string"
+            "type": "string",
+            "description": "Vide si le commentaire a été supprimé (`deleted: true`)."
           },
           "author": {
             "$ref": "#/components/schemas/PublicUser"
           },
           "isMine": {
+            "type": "boolean"
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "Commentaire supprimé qui garde ses réponses : contenu vide, auteur anonymisé."
+          },
+          "repliesCount": {
+            "type": "integer"
+          },
+          "likesCount": {
+            "type": "integer"
+          },
+          "dislikesCount": {
+            "type": "integer"
+          },
+          "likedByMe": {
+            "type": "boolean"
+          },
+          "dislikedByMe": {
             "type": "boolean"
           },
           "createdAt": {
@@ -518,9 +545,16 @@
         "required": [
           "id",
           "dropId",
+          "parentId",
           "content",
           "author",
           "isMine",
+          "deleted",
+          "repliesCount",
+          "likesCount",
+          "dislikesCount",
+          "likedByMe",
+          "dislikedByMe",
           "createdAt"
         ]
       },

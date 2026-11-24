@@ -44,7 +44,7 @@ export function profileStats(db: Db, userId: number) {
       `SELECT
         (SELECT COUNT(*) FROM drops WHERE author_id = @id AND hidden = 0) AS dropsCount,
         (SELECT COUNT(*) FROM likes l JOIN drops d ON d.id = l.drop_id WHERE d.author_id = @id AND d.hidden = 0) AS likesReceived,
-        (SELECT COUNT(*) FROM comments WHERE author_id = @id) AS commentsCount`,
+        (SELECT COUNT(*) FROM comments WHERE author_id = @id AND deleted = 0) AS commentsCount`,
     )
     .get({ id: userId }) as { dropsCount: number; likesReceived: number; commentsCount: number };
   return row;

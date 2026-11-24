@@ -36,14 +36,12 @@ describe('POST /drops', () => {
       content: 'Calme et ensoleillé.',
       category: 'tip',
       imageUrl: null,
-      location: { lat: 47.4956, lng: 6.8054, precision: 'exact' },
-      locked: false,
+      location: { lat: 47.4956, lng: 6.8054 },
       hidden: false,
       likesCount: 0,
+      dislikesCount: 0,
       commentsCount: 0,
-      opensCount: 0,
       likedByMe: false,
-      openedByMe: false,
       isMine: true,
       author: { username: 'lea' },
     });
@@ -84,7 +82,6 @@ describe('POST /drops', () => {
     ['latitude absente', { lat: undefined }, 'location', 'Champ requis.'],
     ['latitude hors bornes', { lat: 100 }, 'location', undefined],
     ['longitude hors bornes', { lng: -181 }, 'location', undefined],
-    ['hors zone', { lat: 48.8566, lng: 2.3522 }, 'location', 'Ce point est en dehors de la zone autorisée (3 km autour du département MMI).'],
     ['champ inconnu', { color: 'red' }, 'color', 'Champ inconnu.'],
     ['titre non texte', { title: 12345 }, 'title', 'Doit être une chaîne de caractères.'],
   ])('renvoie 422 : %s', async (_n, patch, field, message) => {
@@ -96,13 +93,12 @@ describe('POST /drops', () => {
     if (message) expect(res.body.error.fields[field]).toContain(message);
   });
 
-  it('accepte un point à 2,9 km et refuse un point à 3,1 km', async () => {
+  it('accepte un point loin de Montbéliard', async () => {
     const { api, lea } = await setup();
-    const inside = await api.post('/drops').set(bearer(lea)).send({ ...validDrop, lat: 47.495472 + 2900 / 111320, lng: 6.805279 });
-    expect(inside.status).toBe(201);
-    const outside = await api.post('/drops').set(bearer(lea)).send({ ...validDrop, lat: 47.495472 + 3100 / 111320, lng: 6.805279 });
-    expect(outside.status).toBe(422);
-    expect(Object.keys(outside.body.error.fields)).toEqual(['location']);
+    const far = await api.post('/drops').set(bearer(lea)).send({ ...validDrop, lat: 48.8566, lng: 2.3522 });
+    expect(far.status).toBe(201);
+    const edge = await api.post('/drops').set(bearer(lea)).send({ ...validDrop, lat: 47.495472 + 3100 / 111320, lng: 6.805279 });
+    expect(edge.status).toBe(201);
   });
 
   it('range toutes les erreurs de coordonnées sous location, sans doublon', async () => {
@@ -180,7 +176,6 @@ describe('PATCH /drops/:id', () => {
     ['titre trop court', { title: 'a' }, 'title'],
     ['latitude seule', { lat: 47.49 }, 'location'],
     ['longitude seule', { lng: 6.8 }, 'location'],
-    ['hors zone', { lat: 48.85, lng: 2.35 }, 'location'],
     ['latitude texte', { lat: 'x', lng: 6.8 }, 'location'],
     ['champ inconnu', { likesCount: 99 }, 'likesCount'],
     ['catégorie inconnue', { category: 'x' }, 'category'],
@@ -228,7 +223,6 @@ describe('DELETE /drops/:id', () => {
     await ctx.api.post(`/drops/${drop.id}/like`).set(bearer(ctx.demo));
     await ctx.api.post(`/drops/${drop.id}/comments`).set(bearer(ctx.demo)).send({ content: 'Top' });
     await ctx.api.post(`/drops/${drop.id}/report`).set(bearer(ctx.demo)).send({ reason: 'spam' });
-    ctx.db.prepare('INSERT INTO opens (drop_id, user_id, opened_at) VALUES (?, 1, ?)').run(drop.id, 'now');
     const seen: any[] = [];
     const off = events.on('drop:deleted', (d) => seen.push(d));
     const res = await ctx.api.delete(`/drops/${drop.id}`).set(bearer(ctx.lea));
@@ -236,7 +230,7 @@ describe('DELETE /drops/:id', () => {
     expect(res.status).toBe(204);
     expect(seen).toHaveLength(1);
     expect((await ctx.api.get(`/drops/${drop.id}`)).status).toBe(404);
-    for (const table of ['likes', 'comments', 'reports', 'opens']) {
+    for (const table of ['likes', 'comments', 'reports']) {
       const row = ctx.db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE drop_id = ?`).get(drop.id) as any;
       expect(row.n, table).toBe(0);
     }
@@ -273,24 +267,26 @@ describe('DELETE /drops/:id', () => {
   });
 });
 
+const COMMENT_KEYS = ['author', 'content', 'createdAt', 'deleted', 'dislikedByMe', 'dislikesCount', 'dropId', 'id', 'isMine', 'likedByMe', 'likesCount', 'parentId', 'repliesCount'];
+
 describe('likes', () => {
   it('est idempotent dans les deux sens', async () => {
     const ctx = await setup();
     const drop = await createDrop(ctx, ctx.lea);
     const first = await ctx.api.post(`/drops/${drop.id}/like`).set(bearer(ctx.demo));
     expect(first.status).toBe(200);
-    expect(first.body).toEqual({ liked: true, likesCount: 1 });
+    expect(first.body).toEqual({ liked: true, disliked: false, likesCount: 1, dislikesCount: 0 });
     const second = await ctx.api.post(`/drops/${drop.id}/like`).set(bearer(ctx.demo));
-    expect(second.body).toEqual({ liked: true, likesCount: 1 });
+    expect(second.body).toEqual({ liked: true, disliked: false, likesCount: 1, dislikesCount: 0 });
     const other = await ctx.api.post(`/drops/${drop.id}/like`).set(bearer(ctx.lea));
-    expect(other.body).toEqual({ liked: true, likesCount: 2 });
+    expect(other.body).toEqual({ liked: true, disliked: false, likesCount: 2, dislikesCount: 0 });
     const detail = await ctx.api.get(`/drops/${drop.id}`).set(bearer(ctx.demo));
     expect(detail.body).toMatchObject({ likedByMe: true, likesCount: 2 });
     const removed = await ctx.api.delete(`/drops/${drop.id}/like`).set(bearer(ctx.demo));
-    expect(removed.body).toEqual({ liked: false, likesCount: 1 });
+    expect(removed.body).toEqual({ liked: false, disliked: false, likesCount: 1, dislikesCount: 0 });
     const again = await ctx.api.delete(`/drops/${drop.id}/like`).set(bearer(ctx.demo));
     expect(again.status).toBe(200);
-    expect(again.body).toEqual({ liked: false, likesCount: 1 });
+    expect(again.body).toEqual({ liked: false, disliked: false, likesCount: 1, dislikesCount: 0 });
   });
 
   it('renvoie 401, 404 et 404 pour un id invalide', async () => {
@@ -324,7 +320,7 @@ describe('commentaires', () => {
     off();
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ dropId: drop.id, content: 'Validé !', isMine: true, author: { username: 'demo' } });
-    expect(Object.keys(res.body).sort()).toEqual(['author', 'content', 'createdAt', 'dropId', 'id', 'isMine']);
+    expect(Object.keys(res.body).sort()).toEqual(COMMENT_KEYS);
     expect(seen).toHaveLength(1);
     expect((await ctx.api.get(`/drops/${drop.id}`)).body.commentsCount).toBe(1);
     const list = await ctx.api.get(`/drops/${drop.id}/comments`).set(bearer(ctx.lea));
@@ -590,11 +586,11 @@ describe('limites d’écriture et simulation sur les écritures', () => {
 });
 
 describe('documentation des routes d’écriture', () => {
-  it('décrit la zone, l’authentification et les erreurs', async () => {
+  it('décrit l’absence de zone, l’authentification et les erreurs', async () => {
     const { api } = buildTestApp();
     const doc = (await api.get('/openapi.json')).body;
     const post = doc.paths['/drops'].post;
-    expect(post.description).toContain('domicile');
+    expect(post.description).toContain('Aucune restriction de zone');
     expect(post.security).toEqual([{ bearerAuth: [] }]);
     expect(Object.keys(post.responses).sort()).toEqual(['201', '400', '401', '422', '429', '500']);
     const del = doc.paths['/drops/{id}'].delete;

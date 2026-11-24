@@ -18,10 +18,10 @@ export interface DropRow {
   display_name: string;
   avatar_url: string | null;
   likes_count: number;
+  dislikes_count: number;
   comments_count: number;
-  opens_count: number;
   liked_by_me: number;
-  opened_by_me: number;
+  disliked_by_me: number;
 }
 
 const SELECT_DROP = `
@@ -29,41 +29,29 @@ const SELECT_DROP = `
     d.created_at, d.updated_at,
     u.username, u.display_name, u.avatar_url,
     (SELECT COUNT(*) FROM likes l WHERE l.drop_id = d.id) AS likes_count,
-    (SELECT COUNT(*) FROM comments c WHERE c.drop_id = d.id) AS comments_count,
-    (SELECT COUNT(*) FROM opens o WHERE o.drop_id = d.id) AS opens_count,
+    (SELECT COUNT(*) FROM dislikes dl WHERE dl.drop_id = d.id) AS dislikes_count,
+    (SELECT COUNT(*) FROM comments c WHERE c.drop_id = d.id AND c.deleted = 0) AS comments_count,
     EXISTS (SELECT 1 FROM likes l WHERE l.drop_id = d.id AND l.user_id = @me) AS liked_by_me,
-    EXISTS (SELECT 1 FROM opens o WHERE o.drop_id = d.id AND o.user_id = @me) AS opened_by_me
+    EXISTS (SELECT 1 FROM dislikes dl WHERE dl.drop_id = d.id AND dl.user_id = @me) AS disliked_by_me
   FROM drops d
   JOIN users u ON u.id = d.author_id`;
 
-export const approximate = (value: number): number => Math.round(value * 1000) / 1000;
-
-export function isLockedFor(row: DropRow, viewerId: number | null, lockMode: 'on' | 'off'): boolean {
-  if (lockMode !== 'on') return false;
-  if (viewerId === null) return true;
-  return row.author_id !== viewerId && row.opened_by_me !== 1;
-}
-
-export function toDrop(row: DropRow, viewerId: number | null, lockMode: 'on' | 'off' = 'off') {
+export function toDrop(row: DropRow, viewerId: number | null) {
   const isMine = viewerId !== null && row.author_id === viewerId;
-  const locked = isLockedFor(row, viewerId, lockMode);
   return {
     id: row.id,
     title: row.title,
-    content: (locked ? null : row.content) as string | null,
+    content: row.content,
     category: row.category,
-    imageUrl: locked ? null : row.image_url,
-    location: locked
-      ? { lat: approximate(row.lat), lng: approximate(row.lng), precision: 'approx' as 'exact' | 'approx' }
-      : { lat: row.lat, lng: row.lng, precision: 'exact' as 'exact' | 'approx' },
-    locked,
+    imageUrl: row.image_url,
+    location: { lat: row.lat, lng: row.lng },
     hidden: isMine && row.hidden === 1,
     author: toPublicUser({ id: row.author_id, username: row.username, display_name: row.display_name, avatar_url: row.avatar_url }),
     likesCount: row.likes_count,
+    dislikesCount: row.dislikes_count,
     commentsCount: row.comments_count,
-    opensCount: row.opens_count,
     likedByMe: row.liked_by_me === 1,
-    openedByMe: row.opened_by_me === 1,
+    dislikedByMe: row.disliked_by_me === 1,
     isMine,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -124,24 +112,11 @@ function prefilterRectangle(f: DropFilters): Bbox | null {
   return null;
 }
 
-export function effectivePosition(row: DropRow, viewerId: number | null, lockMode: 'on' | 'off') {
-  return isLockedFor(row, viewerId, lockMode)
-    ? { lat: approximate(row.lat), lng: approximate(row.lng) }
-    : { lat: row.lat, lng: row.lng };
-}
-
-export function listDrops(db: Db, f: DropFilters, viewerId: number | null, lockMode: 'on' | 'off' = 'off') {
+export function listDrops(db: Db, f: DropFilters, viewerId: number | null) {
   const where: string[] = ['d.hidden = 0'];
   const params: Record<string, unknown> = { me: viewerId ?? 0 };
   if (f.q) {
-    const fields = [`fold(d.title) LIKE @q ESCAPE '\\'`, `fold(u.username) LIKE @q ESCAPE '\\'`];
-    if (lockMode === 'on') {
-      fields.push(
-        `(fold(d.content) LIKE @q ESCAPE '\\' AND (d.author_id = @me OR EXISTS (SELECT 1 FROM opens o WHERE o.drop_id = d.id AND o.user_id = @me)))`,
-      );
-    } else {
-      fields.push(`fold(d.content) LIKE @q ESCAPE '\\'`);
-    }
+    const fields = [`fold(d.title) LIKE @q ESCAPE '\\'`, `fold(u.username) LIKE @q ESCAPE '\\'`, `fold(d.content) LIKE @q ESCAPE '\\'`];
     where.push(`(${fields.join(' OR ')})`);
     params.q = `%${escapeLike(foldText(f.q))}%`;
   }
@@ -177,7 +152,7 @@ export function listDrops(db: Db, f: DropFilters, viewerId: number | null, lockM
   const candidates = db.prepare(`${SELECT_DROP} ${clause} ORDER BY ${order}`).all(params) as DropRow[];
   const kept: { row: DropRow; distance: number }[] = [];
   for (const row of candidates) {
-    const pos = effectivePosition(row, viewerId, lockMode);
+    const pos = { lat: row.lat, lng: row.lng };
     if (f.near) {
       const distance = haversineMeters(f.near.lat, f.near.lng, pos.lat, pos.lng);
       if (distance <= f.near.radius) kept.push({ row, distance });

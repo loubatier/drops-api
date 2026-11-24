@@ -7,10 +7,9 @@ import type { Db } from '../db/index.js';
 import { ApiError, errorBody } from '../errors.js';
 import { events } from '../events.js';
 import { TokenExpiredError, verifyToken } from '../modules/auth/tokens.js';
-import { findComment, toComment } from '../modules/comments/routes.js';
+import { findComment } from '../modules/comments/routes.js';
 import { type DropRow, findDropRow, toDrop } from '../modules/drops/repo.js';
 import { type UserRow, toPublicUser } from '../modules/users/repo.js';
-import type { Settings, SettingsChange } from '../settings.js';
 
 export const CLOSE = {
   sessionExpired: [4001, 'session_expired'],
@@ -88,7 +87,6 @@ const MAX_TICKETS = 10_000;
 export function createRealtime(
   config: Config,
   db: Db,
-  settings: Settings,
   options: RealtimeOptions = {},
 ): Realtime {
   const presenceDebounceMs = options.presenceDebounceMs ?? 1000;
@@ -191,17 +189,14 @@ export function createRealtime(
   const canSeeDrop = (row: DropRow | undefined, viewerId: number): row is DropRow =>
     row !== undefined && (row.hidden === 0 || row.author_id === viewerId);
 
-  const canSeeComments = (row: DropRow, viewerId: number): boolean =>
-    settings.lockMode() !== 'on' || row.author_id === viewerId || row.opened_by_me === 1;
-
   const serializeFor = (dropId: number, viewerId: number) => {
     const row = findDropRow(db, dropId, viewerId);
-    return row ? { row, drop: toDrop(row, viewerId, settings.lockMode()) } : null;
+    return row ? { row, drop: toDrop(row, viewerId) } : null;
   };
 
   const notify = (
     authorId: number,
-    kind: 'drop_opened' | 'drop_liked' | 'drop_commented',
+    kind: 'drop_liked' | 'drop_commented',
     row: DropRow,
     byId: number,
   ) => {
@@ -248,14 +243,14 @@ export function createRealtime(
       ),
       events.on(
         'like:updated',
-        guard((payload: { dropId: number; userId: number; liked: boolean; likesCount: number }) => {
+        guard((payload: { dropId: number; userId: number; newLike: boolean; likesCount: number; dislikesCount: number }) => {
           const row = findDropRow(db, payload.dropId, null);
           if (!row) return;
           for (const conn of connections) {
             if (row.hidden === 1 && row.author_id !== conn.userId) continue;
-            send(conn, 'like:updated', { dropId: payload.dropId, likesCount: payload.likesCount });
+            send(conn, 'like:updated', { dropId: payload.dropId, likesCount: payload.likesCount, dislikesCount: payload.dislikesCount });
           }
-          if (payload.liked) notify(row.author_id, 'drop_liked', row, payload.userId);
+          if (payload.newLike) notify(row.author_id, 'drop_liked', row, payload.userId);
         }),
       ),
       events.on(
@@ -263,12 +258,23 @@ export function createRealtime(
         guard((payload: { id: number; dropId: number; author: { id: number } }) => {
           for (const conn of connections) {
             const row = findDropRow(db, payload.dropId, conn.userId);
-            if (!canSeeDrop(row, conn.userId) || !canSeeComments(row, conn.userId)) continue;
-            const stored = findComment(db, payload.id);
-            if (stored) send(conn, 'comment:created', { comment: toComment(stored, conn.userId) });
+            if (!canSeeDrop(row, conn.userId)) continue;
+            const comment = findComment(db, payload.id, conn.userId);
+            if (comment) send(conn, 'comment:created', { comment });
           }
           const row = findDropRow(db, payload.dropId, null);
           if (row) notify(row.author_id, 'drop_commented', row, payload.author.id);
+        }),
+      ),
+      events.on(
+        'comment:updated',
+        guard((payload: { id: number; dropId: number }) => {
+          for (const conn of connections) {
+            const row = findDropRow(db, payload.dropId, conn.userId);
+            if (!canSeeDrop(row, conn.userId)) continue;
+            const comment = findComment(db, payload.id, conn.userId);
+            if (comment) send(conn, 'comment:updated', { comment });
+          }
         }),
       ),
       events.on(
@@ -276,28 +282,11 @@ export function createRealtime(
         guard((payload: { dropId: number; commentId: number }) => {
           for (const conn of connections) {
             const row = findDropRow(db, payload.dropId, conn.userId);
-            if (!canSeeDrop(row, conn.userId) || !canSeeComments(row, conn.userId)) continue;
+            if (!canSeeDrop(row, conn.userId)) continue;
             send(conn, 'comment:deleted', { dropId: payload.dropId, commentId: payload.commentId });
           }
         }),
       ),
-      events.on(
-        'drop:opened',
-        guard((payload: { dropId: number; userId: number; opensCount: number }) => {
-          const row = findDropRow(db, payload.dropId, null);
-          if (!row) return;
-          for (const conn of connections) {
-            if (row.hidden === 1 && row.author_id !== conn.userId) continue;
-            send(conn, 'drop:opened', { dropId: payload.dropId, opensCount: payload.opensCount });
-          }
-          notify(row.author_id, 'drop_opened', row, payload.userId);
-        }),
-      ),
-      settings.onChange((change: SettingsChange) => {
-        if (change.previous.lockMode !== change.lockMode) {
-          broadcast('settings:updated', { lockMode: change.lockMode });
-        }
-      }),
     );
   };
 
@@ -377,7 +366,6 @@ export function createRealtime(
       send(conn, 'hello', {
         user,
         serverTime: new Date().toISOString(),
-        lockMode: settings.lockMode(),
         online: onlineUsers(),
       });
       scheduleOnline();

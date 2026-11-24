@@ -185,7 +185,7 @@ import { useRealtimeEvent } from '@/hooks/use-realtime-event';
 export function LikesCount({ dropId, initial }: { dropId: number; initial: number }) {
   const [likes, setLikes] = useState(initial);
 
-  useRealtimeEvent<{ dropId: number; likesCount: number }>('like:updated', (data) => {
+  useRealtimeEvent<{ dropId: number; likesCount: number; dislikesCount: number }>('like:updated', (data) => {
     if (data.dropId === dropId) setLikes(data.likesCount);
   });
 
@@ -222,21 +222,20 @@ Un message illisible ou de type inconnu reçoit \`error\` \`bad_message\`, sans 
 
 | Type | \`data\` | Quand |
 |---|---|---|
-| \`hello\` | \`{ user, serverTime, lockMode, online }\` | Une fois, à l'ouverture. \`user\` est vous-même, \`online\` les utilisateurs connectés (vous compris). |
+| \`hello\` | \`{ user, serverTime, online }\` | Une fois, à l'ouverture. \`user\` est vous-même, \`online\` les utilisateurs connectés (vous compris). |
 | \`pong\` | \`{ serverTime }\` | Réponse à \`ping\`. |
 | \`presence:online\` | \`{ users }\` | Quelqu'un arrive ou part. Au plus une fois par seconde. |
 | \`presence:drop\` | \`{ dropId, viewers }\` | Réponse à votre \`presence:view\`, puis à chaque changement de lecteurs du drop (au plus une fois par seconde, seulement si la liste change). |
-| \`drop:created\`, \`drop:updated\` | \`{ drop }\` | Un drop est créé ou modifié. Le \`drop\` est construit pour vous : \`isMine\`, \`likedByMe\`, \`openedByMe\`, verrouillage. |
+| \`drop:created\`, \`drop:updated\` | \`{ drop }\` | Un drop est créé ou modifié. Le \`drop\` est construit pour vous : \`isMine\`, \`likedByMe\`, \`dislikedByMe\`. |
 | \`drop:deleted\` | \`{ dropId }\` | Un drop est supprimé, ou masqué après signalements. |
-| \`drop:opened\` | \`{ dropId, opensCount }\` | Un drop est ouvert à proximité. |
-| \`like:updated\` | \`{ dropId, likesCount }\` | Un like est posé ou retiré. |
-| \`comment:created\` | \`{ comment }\` | Nouveau commentaire, sauf sur un drop verrouillé que vous n'avez pas ouvert. |
+| \`like:updated\` | \`{ dropId, likesCount, dislikesCount }\` | Un like ou un dislike est posé ou retiré (poser l'un retire l'autre). |
+| \`comment:created\` | \`{ comment }\` | Nouveau commentaire ou nouvelle réponse (\`comment.parentId\` renseigné) |
+| \`comment:updated\` | \`{ comment }\` | Les compteurs de réactions d'un commentaire changent, ou un commentaire supprimé qui a des réponses est conservé (\`deleted: true\`). Mêmes règles. |
 | \`comment:deleted\` | \`{ dropId, commentId }\` | Commentaire supprimé, mêmes règles. |
-| \`notification\` | \`{ kind, dropId, dropTitle, by, at }\` | Seul l'auteur du drop la reçoit, jamais pour ses propres actions. \`kind\` : \`drop_opened\`, \`drop_liked\`, \`drop_commented\`. |
-| \`settings:updated\` | \`{ lockMode }\` | L'enseignant active ou coupe le verrouillage. |
+| \`notification\` | \`{ kind, dropId, dropTitle, by, at }\` | Seul l'auteur du drop la reçoit, jamais pour ses propres actions. \`kind\` : \`drop_liked\`, \`drop_commented\`. |
 | \`error\` | \`{ code, message }\` | Message client refusé. \`code\` : \`bad_message\` ou \`drop_not_found\`. La connexion reste ouverte. |
 
-Les drops masqués ne sont diffusés qu'à leur auteur. Un événement ne révèle jamais le contenu d'un drop verrouillé.
+Les drops masqués ne sont diffusés qu'à leur auteur.
 
 ## Codes de fermeture
 

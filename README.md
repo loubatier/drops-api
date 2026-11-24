@@ -1,6 +1,6 @@
 # Drops API
 
-API de support pour le module R505 (BUT MMI 3, Montbéliard). Les élèves déposent des **drops** (messages géolocalisés) qu'on peut liker et commenter. Le contrat complet est dans `SPECS.md` (bloc 1) et `SPECS_V2.md` (bloc 2), la documentation interactive sur `/docs`.
+API de support pour le module R505 (BUT MMI 3, Montbéliard). Les élèves déposent des **drops** (messages géolocalisés) qu'on peut liker, disliker et commenter (avec des réponses). Le contrat complet est dans `SPECS.md` (bloc 1) et `SPECS_V2.md` (bloc 2), la documentation interactive sur `/docs`.
 
 ## Lancer en local en 3 commandes
 
@@ -21,18 +21,14 @@ L'API écoute sur http://localhost:4000 (`/docs`, `/health`, `/contract.md`).
 | `JWT_SECRET` | obligatoire | 32 caractères minimum |
 | `JWT_TTL_SECONDS` | `28800` | Durée de vie d'un token |
 | `ADMIN_KEY` | obligatoire | Clé de l'enseignant (`X-Admin-Key`) |
-| `ZONE_CENTER` | `47.495472,6.805279` | Centre de la zone autorisée |
-| `ZONE_RADIUS_M` | `3000` | Rayon de la zone (mètres) |
-| `LOCK_MODE` | `off` | Bloc 2 : `on` verrouille les drops. Modifiable à chaud |
+| `ZONE_CENTER` | `47.495472,6.805279` | Centre de la zone du jeu de données d'exemple et du simulateur |
+| `ZONE_RADIUS_M` | `3000` | Rayon de cette zone (mètres) ; ne limite plus la création de drops |
 | `ENABLE_SIMULATION` | `true` | Active `?delay=` et `?fail=` |
 | `REPORT_HIDE_THRESHOLD` | `3` | Signalements qui masquent un drop |
 | `RATE_LIMIT_READ_PER_MIN` | `600` | Lectures par minute et par clé |
 | `RATE_LIMIT_WRITE_PER_MIN` | `60` | Écritures par minute et par utilisateur |
 | `RATE_LIMIT_AUTH_PER_MIN` | `60` | Inscriptions et connexions par minute et par IP |
 | `SEED_ON_EMPTY` | `true` | Charge les données d'exemple si la base est vide |
-| `OPEN_RADIUS_M` | `50` | Bloc 2 : rayon d'ouverture d'un drop |
-| `OPEN_ACCURACY_CAP_M` | `50` | Bloc 2 : tolérance maximale accordée pour l'imprécision GPS |
-| `RATE_LIMIT_OPEN_PER_MIN` | `30` | Bloc 2 : tentatives d'ouverture par minute et par utilisateur |
 | `BBOX_MAX_PAGE_SIZE` | `200` | Bloc 2 : `pageSize` maximal avec `bbox` |
 | `WS_TICKET_TTL_SECONDS` | `30` | Bloc 2 : durée de validité d'un ticket WebSocket |
 | `WS_MAX_CONNECTIONS_PER_USER` | `5` | Bloc 2 : connexions WebSocket simultanées par utilisateur |
@@ -59,7 +55,7 @@ curl -X POST https://<domaine>/admin/reset \
   -d '{"confirm":"RESET","mode":"keep-users"}'
 ```
 
-`mode: "all"` vide tout (comptes compris) et recharge les données d'exemple ; `"keep-users"` garde les comptes des élèves et remet les drops, likes, commentaires et signalements à l'état d'exemple. Les drops signalés se consultent avec `GET /admin/reports` et se réactivent avec `POST /admin/drops/{id}/unhide`.
+`mode: "all"` vide tout (comptes compris) et recharge les données d'exemple ; `"keep-users"` garde les comptes des élèves et remet les drops, likes, dislikes, commentaires et signalements à l'état d'exemple. Les drops signalés se consultent avec `GET /admin/reports` et se réactivent avec `POST /admin/drops/{id}/unhide`.
 
 ## Scripts
 
@@ -85,7 +81,7 @@ Le bloc 2 (`SPECS_V2.md`) est **additif** et toujours actif : ses routes, ses pa
 
 1. Développer sur une branche (`v2`, ou `block2` dans la spec) : **ne jamais pousser sur `main`**, chaque push sur `main` redéploie l'API utilisée en cours.
 2. L'environnement `staging` de Railway (volume et domaine propres) déploie cette branche. Pousser à la fin de chaque palier.
-3. Avant de fusionner : `npm test` vert, puis `ADMIN_KEY=… npm run smoke:block2 -- https://<staging>` vert. Ce script crée deux comptes et des drops, puis restaure les réglages et supprime les drops. **Ne jamais le lancer contre la production pendant un cours** (il avertit si l'URL ne contient pas `staging`).
+3. Avant de fusionner : `npm test` vert, puis `ADMIN_KEY=… npm run smoke:block2 -- https://<staging>` vert. Ce script crée deux comptes et des drops, puis supprime les drops. **Ne jamais le lancer contre la production pendant un cours** (il avertit si l'URL ne contient pas `staging`).
 4. Fusionner dans `main` **le soir**, jamais pendant un cours (un redéploiement coupe l'API environ une minute). Relancer ensuite `npm run smoke` sur la production.
 
 ### Fenêtre de déploiement du lundi (J4)
@@ -103,20 +99,6 @@ Le cours a lieu de 8 h à 12 h et de 13 h à 17 h ; un redéploiement coupe l'AP
 ### Documentation du WebSocket pour les élèves
 
 `GET /ws-docs` (page HTML mise en forme, hors de `/openapi.json` ; le Markdown brut est sur `/ws-docs.md`) : tous les messages client → serveur et serveur → client, les codes de fermeture avec la conduite à tenir, les limites, un exemple Next.js (App Router : route serveur du ticket, client WebSocket partagé à une connexion par onglet, hooks `usePresence` et `useRealtimeEvent`, composants) et les pièges fréquents. Elle est construite à partir des mêmes textes que `/contract.md` et `/docs`, et liée depuis `/docs`, `/contract.md` et `/ws-playground`.
-
-### Activation à chaud
-
-`lockMode` est stocké en base et prime sur la variable d'environnement. Aucun redéploiement :
-
-```bash
-# lire les réglages
-curl https://<domaine>/admin/settings -H "X-Admin-Key: $ADMIN_KEY"
-# verrouiller les drops
-curl -X PATCH https://<domaine>/admin/settings -H "X-Admin-Key: $ADMIN_KEY" \
-  -H "Content-Type: application/json" -d '{"lockMode":"on"}'
-```
-
-Changer `lockMode` prévient tous les clients connectés (`settings:updated`).
 
 ### Outils de l'enseignant
 

@@ -4,11 +4,10 @@ import type { Config } from '../config.js';
 import type { Db } from '../db/index.js';
 import { notFound } from '../errors.js';
 import type { Realtime } from '../realtime/hub.js';
-import type { Settings } from '../settings.js';
 import { validate } from '../validation.js';
 
 export type Access = 'public' | 'optional' | 'auth' | 'admin' | 'author_or_admin';
-export type RateClass = 'read' | 'write' | 'auth' | 'open' | 'none';
+export type RateClass = 'read' | 'write' | 'auth' | 'none';
 export type Method = 'get' | 'post' | 'patch' | 'delete';
 
 export interface AuthUser {
@@ -28,7 +27,6 @@ export interface Ctx<P = any, Q = any, B = any> {
   isAdmin: boolean;
   db: Db;
   config: Config;
-  settings: Settings;
   realtime: Realtime;
 }
 
@@ -58,7 +56,7 @@ export interface RouteSpec<P extends ZodTypeAny, Q extends ZodTypeAny, B extends
   rate?: RateClass;
   params?: P;
   query?: Q;
-  refineQuery?: (query: z.infer<Q>, ctx: { req: Request; config: Config; settings: Settings }) => z.infer<Q>;
+  refineQuery?: (query: z.infer<Q>, ctx: { req: Request; config: Config }) => z.infer<Q>;
   body?: B;
   responses: Record<number, ResponseSpec>;
   errors?: number[];
@@ -82,7 +80,6 @@ export function rateClassOf(spec: AnyRoute): RateClass {
 export interface MountDeps {
   config: Config;
   db: Db;
-  settings: Settings;
   realtime: Realtime;
   pre: (spec: AnyRoute) => RequestHandler[];
 }
@@ -107,14 +104,13 @@ export function mountRoutes(router: Router, routes: AnyRoute[], deps: MountDeps)
           isAdmin: res.locals.isAdmin === true,
           db: deps.db,
           config: deps.config,
-          settings: deps.settings,
           realtime: deps.realtime,
         };
         spec.guard?.(base);
         const querySchema = spec.query;
         let query = querySchema ? validate(querySchema, req.query) : req.query;
         if (querySchema && spec.refineQuery) {
-          query = spec.refineQuery(query, { req, config: deps.config, settings: deps.settings });
+          query = spec.refineQuery(query, { req, config: deps.config });
         }
         const body = spec.body ? validate(spec.body, req.body ?? {}, true) : undefined;
         const result = await spec.handler({ ...base, query, body });

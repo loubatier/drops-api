@@ -1,5 +1,3 @@
-import type { Config } from '../../config.js';
-import { haversineMeters } from '../../geo.js';
 import { z } from '../../openapi/zod.js';
 import { CATEGORIES, httpsUrl } from '../../schemas.js';
 
@@ -15,21 +13,7 @@ export const lngField = z
   .min(-180, 'La longitude doit être comprise entre -180 et 180.')
   .max(180, 'La longitude doit être comprise entre -180 et 180.');
 
-export function zoneMessage(config: Config): string {
-  const km = config.zone.radiusM / 1000;
-  return `Ce point est en dehors de la zone autorisée (${String(km).replace('.', ',')} km autour du département MMI).`;
-}
-
-export function isInZone(config: Config, lat: number, lng: number): boolean {
-  return haversineMeters(config.zone.lat, config.zone.lng, lat, lng) <= config.zone.radiusM;
-}
-
-const coordinatesInRange = (lat: unknown, lng: unknown): boolean =>
-  typeof lat === 'number' && typeof lng === 'number' && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
-
-export function dropSchemas(config: Config) {
-  const message = zoneMessage(config);
-
+export function dropSchemas() {
   const createBody = z
     .object({
       title: titleField,
@@ -43,9 +27,6 @@ export function dropSchemas(config: Config) {
     .superRefine((value, ctx) => {
       if (value.category === 'photo' && !value.imageUrl) {
         ctx.addIssue({ code: 'custom', path: ['imageUrl'], message: 'Une photo a besoin d’une image.' });
-      }
-      if (coordinatesInRange(value.lat, value.lng) && !isInZone(config, value.lat as number, value.lng as number)) {
-        ctx.addIssue({ code: 'custom', path: ['location'], message });
       }
     });
 
@@ -69,8 +50,6 @@ export function dropSchemas(config: Config) {
           path: ['location'],
           message: 'La latitude et la longitude doivent être envoyées ensemble.',
         });
-      } else if (coordinatesInRange(value.lat, value.lng) && !isInZone(config, value.lat as number, value.lng as number)) {
-        ctx.addIssue({ code: 'custom', path: ['location'], message });
       }
     });
 

@@ -6,8 +6,8 @@ export interface DomainEvents {
   'drop:deleted': unknown;
   'like:updated': unknown;
   'comment:created': unknown;
+  'comment:updated': unknown;
   'comment:deleted': unknown;
-  'drop:opened': unknown;
 }
 
 type Listener<K extends keyof DomainEvents> = (payload: DomainEvents[K], source?: unknown) => void;

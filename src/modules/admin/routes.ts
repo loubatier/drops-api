@@ -1,6 +1,5 @@
 import { type ResetMode, resetDatabase } from '../../db/seed.js';
 import { events } from '../../events.js';
-import type { Settings } from '../../settings.js';
 import type { SimulatorControl } from '../../simulator.js';
 import { notFound } from '../../errors.js';
 import { defineRoute } from '../../http/route.js';
@@ -52,20 +51,6 @@ const SimulatorStateSchema = z.object({
   presence: z.boolean(),
 });
 
-const SettingsSchema = z
-  .object({
-    lockMode: z.enum(['on', 'off']),
-    simulator: SimulatorStateSchema,
-  })
-  .openapi('AdminSettings');
-
-const settingsPatchBody = z
-  .object({
-    lockMode: z.enum(['on', 'off'], { errorMap: () => ({ message: 'Doit valoir "on" ou "off".' }) }).optional(),
-  })
-  .strict()
-  .refine((v) => Object.keys(v).length > 0, { message: 'Renseignez au moins un réglage.' });
-
 const RealtimeStatsSchema = z
   .object({
     connections: z.number().int(),
@@ -79,10 +64,6 @@ const RealtimeStatsSchema = z
   .openapi('AdminRealtime');
 
 export function adminRoutes({ simulator }: { simulator: SimulatorControl }) {
-  const settingsView = (settings: Settings) => ({
-    lockMode: settings.lockMode(),
-    simulator: simulator.state(),
-  });
   return [
     defineRoute({
       method: 'post',
@@ -175,46 +156,6 @@ export function adminRoutes({ simulator }: { simulator: SimulatorControl }) {
         const drop = toDrop(findDropRow(db, params.id, null)!, null);
         events.emit('drop:updated', drop, db);
         return { body: drop };
-      },
-    }),
-    defineRoute({
-      method: 'get',
-      path: '/admin/settings',
-      tags: ['Admin (enseignant)'],
-      summary: 'Lire les réglages à chaud',
-      description:
-        "Réglages modifiables sans redéploiement : `lockMode` et l'état du simulateur. Une valeur stockée prime sur la variable d'environnement.",
-      access: 'admin',
-      rate: 'none',
-      responses: {
-        200: {
-          description: 'Réglages courants.',
-          schema: SettingsSchema,
-          example: { lockMode: 'off', simulator: { enabled: false, intervalSeconds: 20, presence: true } },
-        },
-      },
-      handler: ({ settings }) => ({ body: settingsView(settings) }),
-    }),
-    defineRoute({
-      method: 'patch',
-      path: '/admin/settings',
-      tags: ['Admin (enseignant)'],
-      summary: 'Modifier les réglages à chaud',
-      description:
-        "`lockMode` verrouille ou déverrouille les drops. Un changement de `lockMode` émet `settings:updated` à tous les clients connectés.",
-      access: 'admin',
-      rate: 'none',
-      body: settingsPatchBody,
-      responses: {
-        200: {
-          description: 'Réglages après modification.',
-          schema: SettingsSchema,
-          example: { lockMode: 'on', simulator: { enabled: false, intervalSeconds: 20, presence: true } },
-        },
-      },
-      handler: ({ body, settings }) => {
-        settings.update(body);
-        return { body: settingsView(settings) };
       },
     }),
     defineRoute({

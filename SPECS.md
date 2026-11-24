@@ -420,6 +420,8 @@ Les chaînes sont « trimmées » avant validation. Les messages ci-dessous sont
 
 **Toutes les erreurs de coordonnées utilisent la clé `location`** (type, bornes et zone), pour qu'un sélecteur de position sur carte n'ait qu'un seul endroit où afficher l'erreur. Plusieurs erreurs sur un même champ sont toutes renvoyées.
 
+> **Révision** : la restriction de zone a été supprimée (voir `DECISIONS.md`). Le point peut être n'importe où ; seules les bornes de latitude et de longitude sont contrôlées. Le texte ci-dessous est conservé pour l'historique.
+
 La restriction de zone est un **choix éthique** : elle empêche de déposer un drop près de son domicile, ce qui révélerait où l'on habite. Mentionne-le dans la documentation de `POST /drops`.
 
 ---

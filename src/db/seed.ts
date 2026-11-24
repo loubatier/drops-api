@@ -116,7 +116,7 @@ export type ResetMode = 'all' | 'keep-users';
 
 export function resetDatabase(db: Db, mode: ResetMode, options: SeedOptions = {}): Counts {
   db.transaction(() => {
-    db.exec('DELETE FROM opens; DELETE FROM reports; DELETE FROM likes; DELETE FROM comments; DELETE FROM drops;');
+    db.exec('DELETE FROM reports; DELETE FROM likes; DELETE FROM dislikes; DELETE FROM comment_reactions; DELETE FROM comments; DELETE FROM drops;');
     if (mode === 'all') {
       db.exec('DELETE FROM revoked_tokens; DELETE FROM users; DELETE FROM sqlite_sequence;');
     } else {

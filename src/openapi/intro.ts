@@ -5,8 +5,8 @@ export const TAGS = [
   { name: 'Auth', description: 'Inscription, connexion, session.' },
   { name: 'Utilisateurs', description: 'Profils publics.' },
   { name: 'Drops', description: 'Lecture, création, modification et suppression des drops.' },
-  { name: 'Likes', description: 'Liker et retirer son like.' },
-  { name: 'Commentaires', description: 'Commentaires des drops.' },
+  { name: 'Likes', description: 'Liker, disliker et retirer sa réaction sur un drop. Like et dislike s\'excluent.' },
+  { name: 'Commentaires', description: 'Commentaires des drops, réponses (un seul niveau), likes et dislikes de commentaires.' },
   { name: 'Signalement', description: 'Signalement des drops problématiques.' },
   { name: 'Admin (enseignant)', description: 'Routes réservées à la clé `X-Admin-Key`.' },
   {
@@ -17,7 +17,7 @@ export const TAGS = [
 ];
 
 export const INTRO = `
-API de support pour le module R505 (BUT MMI, Montbéliard). Les élèves déposent des **drops** : des messages géolocalisés qu'on peut liker et commenter.
+API de support pour le module R505 (BUT MMI, Montbéliard). Les élèves déposent des **drops** : des messages géolocalisés qu'on peut liker, disliker et commenter (avec des réponses).
 
 ## Conventions
 - JSON uniquement, champs en camelCase, dates ISO 8601 UTC.
@@ -63,7 +63,7 @@ export const BLOCK2_TAGS = [
 export const BLOCK2_INTRO = `
 
 ## Bloc 2
-Temps réel (WebSocket), recherche géographique, ouverture et verrouillage des drops, jeu de données. Tout est additif : rien du bloc 1 ne change. Nouveaux codes d'erreur : \`too_far\` (403), \`drop_locked\` (403). Les erreurs peuvent porter un champ facultatif \`meta\`.
+Temps réel (WebSocket), recherche géographique, jeu de données. Tout est additif : rien du bloc 1 ne change.
 
 Une page de démonstration du WebSocket, sans code à écrire, est servie sur [\`/ws-playground\`](/ws-playground). La documentation complète du WebSocket, avec un exemple Next.js, est sur [\`/ws-docs\`](/ws-docs).
 `;

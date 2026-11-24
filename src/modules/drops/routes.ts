@@ -3,7 +3,7 @@ import { resolveGeo } from './geo-query.js';
 import type { Db } from '../../db/index.js';
 import { events } from '../../events.js';
 import { createDrop } from '../../services.js';
-import { dropLocked, forbidden, notFound, tooFar, validationFailed } from '../../errors.js';
+import { forbidden, notFound, validationFailed } from '../../errors.js';
 import { haversineMeters } from '../../geo.js';
 import { defineRoute } from '../../http/route.js';
 import { z } from '../../openapi/zod.js';
@@ -11,7 +11,7 @@ import { CATEGORIES, DropSchema, EXAMPLES, idParams, intQuery, pageExample, page
 import { latField, lngField } from './schemas.js';
 import { PublicUserSchema } from '../../schemas.js';
 import { toPublicUser } from '../users/repo.js';
-import { type DropRow, findDropRow, isLockedFor, isVisibleTo, listDrops, paginate, toDrop } from './repo.js';
+import { findDropRow, isVisibleTo, listDrops, paginate, toDrop } from './repo.js';
 import { dropSchemas } from './schemas.js';
 
 const listQuery = paginationQuery.extend({
@@ -105,9 +105,8 @@ export function dropReadRoutes(config: Config) {
       responses: {
         200: { description: 'Page de drops.', schema: DropPageSchema, example: pageExample(EXAMPLES.drop) },
       },
-      handler: ({ query, db, user, settings }) => {
+      handler: ({ query, db, user }) => {
         const viewerId = user?.id ?? null;
-        const lockMode = settings.lockMode();
         const { rows, total, distances } = listDrops(
           db,
           {
@@ -118,10 +117,9 @@ export function dropReadRoutes(config: Config) {
             bbox: query.geoBbox,
           },
           viewerId,
-          lockMode,
         );
         const items = rows.map((r, i) => ({
-          ...toDrop(r, viewerId, lockMode),
+          ...toDrop(r, viewerId),
           ...(distances ? { distanceM: distances[i] } : {}),
         }));
         return { body: paginate(items, total, query.page, query.pageSize) };
@@ -137,11 +135,11 @@ export function dropReadRoutes(config: Config) {
       access: 'auth',
       params: idParams,
       responses: { 200: { description: 'Drop.', schema: DropSchema, example: EXAMPLES.drop } },
-      handler: ({ params, db, user, settings }) => {
+      handler: ({ params, db, user }) => {
         const viewerId = user?.id ?? null;
         const row = findDropRow(db, params.id, viewerId);
         if (!row || !isVisibleTo(row, viewerId)) throw notFound('Drop introuvable.');
-        return { body: toDrop(row, viewerId, settings.lockMode()) };
+        return { body: toDrop(row, viewerId) };
       },
     }),
   ];
@@ -155,9 +153,8 @@ function viewableDrop(db: Db, id: number, viewerId: number | null) {
   return row;
 }
 
-export function dropWriteRoutes(config: Config) {
-  const { createBody, patchBody } = dropSchemas(config);
-  const radiusKm = String(config.zone.radiusM / 1000).replace('.', ',');
+export function dropWriteRoutes() {
+  const { createBody, patchBody } = dropSchemas();
   return [
     defineRoute({
       method: 'post',
@@ -166,7 +163,7 @@ export function dropWriteRoutes(config: Config) {
       summary: 'Créer un drop',
       description:
         `Dépose un drop à la position \`lat\`/\`lng\`. Les coordonnées doivent être des nombres (pas des chaînes). Une \`photo\` exige \`imageUrl\`.\n\n` +
-        `**Pourquoi une zone ?** Le point doit se trouver à ${radiusKm} km au plus du département MMI. C'est un choix éthique : cela empêche de déposer un drop près de son domicile, ce qui révélerait où l'on habite. Toutes les erreurs de coordonnées (type, bornes, zone) sont rangées sous la clé \`location\`.`,
+        'Aucune restriction de zone : le point peut se trouver n\'importe où. Toutes les erreurs de coordonnées (type, bornes) sont rangées sous la clé `location`.',
       access: 'auth',
       body: createBody,
       responses: {
@@ -177,8 +174,8 @@ export function dropWriteRoutes(config: Config) {
           headers: { Location: 'Chemin du drop créé, par exemple `/drops/42`.' },
         },
       },
-      handler: ({ body, db, user, settings }) => {
-        const drop = createDrop(db, user!.id, body, settings.lockMode());
+      handler: ({ body, db, user }) => {
+        const drop = createDrop(db, user!.id, body);
         return { status: 201, headers: { Location: `/drops/${drop.id}` }, body: drop };
       },
     }),
@@ -188,7 +185,7 @@ export function dropWriteRoutes(config: Config) {
       tags: ['Drops'],
       summary: 'Modifier un drop',
       description:
-        "Réservé à l'auteur. Au moins un champ parmi ceux de la création ; `lat` et `lng` vont ensemble. Les mêmes règles s'appliquent (zone, photo avec image).",
+        "Réservé à l'auteur. Au moins un champ parmi ceux de la création ; `lat` et `lng` vont ensemble. Les mêmes règles s'appliquent (photo avec image).",
       access: 'auth',
       params: idParams,
       body: patchBody,
@@ -198,7 +195,7 @@ export function dropWriteRoutes(config: Config) {
         const row = viewableDrop(db, params.id, user!.id);
         if (row.author_id !== user!.id) throw forbidden("Seul l'auteur peut modifier ce drop.");
       },
-      handler: ({ params, body, db, user, settings }) => {
+      handler: ({ params, body, db, user }) => {
         const row = findDropRow(db, params.id, user!.id)!;
         const next = {
           title: body.title ?? row.title,
@@ -215,7 +212,7 @@ export function dropWriteRoutes(config: Config) {
           `UPDATE drops SET title = ?, content = ?, category = ?, image_url = ?, lat = ?, lng = ?, updated_at = ?
            WHERE id = ?`,
         ).run(next.title, next.content, next.category, next.imageUrl, next.lat, next.lng, nowIso(), params.id);
-        const drop = toDrop(findDropRow(db, params.id, user!.id)!, user!.id, settings.lockMode());
+        const drop = toDrop(findDropRow(db, params.id, user!.id)!, user!.id);
         events.emit('drop:updated', drop, db);
         return { body: drop };
       },
@@ -226,7 +223,7 @@ export function dropWriteRoutes(config: Config) {
       tags: ['Drops'],
       summary: 'Supprimer un drop',
       description:
-        "Réservé à l'auteur (token) ou à l'enseignant (`X-Admin-Key`). Supprime aussi les likes, commentaires, ouvertures et signalements du drop.",
+        "Réservé à l'auteur (token) ou à l'enseignant (`X-Admin-Key`). Supprime aussi les likes, dislikes, commentaires et signalements du drop.",
       access: 'author_or_admin',
       params: idParams,
       errors: [403],
@@ -246,10 +243,6 @@ export function dropWriteRoutes(config: Config) {
       },
     }),
   ];
-}
-
-export function assertUnlocked(row: DropRow, viewerId: number | null, lockMode: 'on' | 'off'): void {
-  if (isLockedFor(row, viewerId, lockMode)) throw dropLocked();
 }
 
 export { viewableDrop };

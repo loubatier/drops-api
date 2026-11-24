@@ -3,8 +3,8 @@ import { haversineMeters } from '../src/geo.js';
 import { bearer, buildSeededApp, loginAs, testConfig } from './helpers.js';
 
 const DROP_KEYS = [
-  'author', 'category', 'commentsCount', 'content', 'createdAt', 'hidden', 'id', 'imageUrl', 'isMine',
-  'likedByMe', 'likesCount', 'location', 'locked', 'openedByMe', 'opensCount', 'title', 'updatedAt',
+  'author', 'category', 'commentsCount', 'content', 'createdAt', 'dislikedByMe', 'dislikesCount', 'hidden', 'id', 'imageUrl', 'isMine',
+  'likedByMe', 'likesCount', 'location', 'title', 'updatedAt',
 ];
 
 describe('GET /drops', () => {
@@ -134,9 +134,8 @@ describe('GET /drops', () => {
     const drop = res.body.items[0];
     expect(Object.keys(drop).sort()).toEqual(DROP_KEYS);
     expect(Object.keys(drop.author).sort()).toEqual(['avatarUrl', 'displayName', 'id', 'username']);
-    expect(Object.keys(drop.location).sort()).toEqual(['lat', 'lng', 'precision']);
-    expect(drop).toMatchObject({ locked: false, hidden: false, opensCount: 0, likedByMe: false, openedByMe: false, isMine: false });
-    expect(drop.location.precision).toBe('exact');
+    expect(Object.keys(drop.location).sort()).toEqual(['lat', 'lng']);
+    expect(drop).toMatchObject({ hidden: false, likedByMe: false, isMine: false });
     expect(drop.content).toBeTypeOf('string');
     expect(JSON.stringify(res.body)).not.toContain('email');
     expect(JSON.stringify(res.body)).not.toContain('password');
@@ -232,7 +231,7 @@ describe('GET /drops/:id/comments', () => {
     const dates = res.body.items.map((c: any) => c.createdAt);
     expect(dates).toEqual([...dates].sort());
     const comment = res.body.items[0];
-    expect(Object.keys(comment).sort()).toEqual(['author', 'content', 'createdAt', 'dropId', 'id', 'isMine']);
+    expect(Object.keys(comment).sort()).toEqual(['author', 'content', 'createdAt', 'deleted', 'dislikedByMe', 'dislikesCount', 'dropId', 'id', 'isMine', 'likedByMe', 'likesCount', 'parentId', 'repliesCount']);
     expect(comment.dropId).toBe(row.drop_id);
     expect(comment.isMine).toBe(false);
     expect(Object.keys(comment.author).sort()).toEqual(['avatarUrl', 'displayName', 'id', 'username']);

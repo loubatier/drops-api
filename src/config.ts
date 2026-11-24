@@ -7,9 +7,6 @@ export interface Config {
   jwtTtlSeconds: number;
   adminKey: string;
   zone: { lat: number; lng: number; radiusM: number };
-  lockMode: 'off' | 'on';
-  openRadiusM: number;
-  openAccuracyCapM: number;
   bboxMaxPageSize: number;
   wsTicketTtlSeconds: number;
   wsMaxConnectionsPerUser: number;
@@ -18,7 +15,7 @@ export interface Config {
   simulatorIntervalSeconds: number;
   enableSimulation: boolean;
   reportHideThreshold: number;
-  rateLimit: { read: number; write: number; auth: number; open: number };
+  rateLimit: { read: number; write: number; auth: number };
   seedOnEmpty: boolean;
   commit: string | null;
   logRequests: boolean;
@@ -52,10 +49,6 @@ const envSchema = z.object({
       .refine((v) => /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(v.trim()), 'format attendu : lat,lng'),
   ),
   ZONE_RADIUS_M: int(3000),
-  LOCK_MODE: z.preprocess(emptyToUndefined, z.enum(['off', 'on']).default('off')),
-  OPEN_RADIUS_M: int(50),
-  OPEN_ACCURACY_CAP_M: int(50, 0),
-  RATE_LIMIT_OPEN_PER_MIN: int(30),
   BBOX_MAX_PAGE_SIZE: int(200),
   WS_TICKET_TTL_SECONDS: int(30),
   WS_MAX_CONNECTIONS_PER_USER: int(5),
@@ -86,9 +79,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     jwtTtlSeconds: e.JWT_TTL_SECONDS,
     adminKey: e.ADMIN_KEY,
     zone: { lat, lng, radiusM: e.ZONE_RADIUS_M },
-    lockMode: e.LOCK_MODE,
-    openRadiusM: e.OPEN_RADIUS_M,
-    openAccuracyCapM: e.OPEN_ACCURACY_CAP_M,
     bboxMaxPageSize: e.BBOX_MAX_PAGE_SIZE,
     wsTicketTtlSeconds: e.WS_TICKET_TTL_SECONDS,
     wsMaxConnectionsPerUser: e.WS_MAX_CONNECTIONS_PER_USER,
@@ -101,7 +91,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       read: e.RATE_LIMIT_READ_PER_MIN,
       write: e.RATE_LIMIT_WRITE_PER_MIN,
       auth: e.RATE_LIMIT_AUTH_PER_MIN,
-      open: e.RATE_LIMIT_OPEN_PER_MIN,
     },
     seedOnEmpty: e.SEED_ON_EMPTY,
     commit: commit ? commit.slice(0, 7) : null,

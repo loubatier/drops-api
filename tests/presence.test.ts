@@ -173,17 +173,6 @@ describe('validation de presence:view', () => {
     expect((await server.api.get('/admin/realtime').set(ADMIN)).body.viewers).toEqual([{ dropId: drop.id, count: 1 }]);
   });
 
-  it('accepte un drop verrouillé', async () => {
-    server = await startServer();
-    const a = await connectAs(server, 'demo');
-    const b = await connectAs(server, 'lea');
-    const drop = await createDrop(server, a.token);
-    await server.api.patch('/admin/settings').set(ADMIN).send({ lockMode: 'on' });
-    b.client.send('presence:view', { dropId: drop.id });
-    expect(ids((await b.client.next('presence:drop')) as any)).toEqual([b.user.id]);
-    expect(b.client.count('error')).toBe(0);
-  });
-
   it('ferme en 4008 une rafale de presence:view', async () => {
     server = await startServer({ wsMessagesPer10s: 5 });
     const a = await connectAs(server, 'demo');
@@ -246,7 +235,6 @@ describe('/ws-docs', () => {
       '4009',
       'hello',
       'notification',
-      'settings:updated',
       '/api/realtime/ticket',
       'new WebSocket',
       "online: PublicUser[]",
@@ -281,8 +269,8 @@ describe('/ws-docs', () => {
     const text = (await api.get('/ws-docs.md')).text;
     const types = [
       'ping', 'pong', 'hello', 'presence:view', 'presence:leave', 'presence:online', 'presence:drop',
-      'drop:created', 'drop:updated', 'drop:deleted', 'drop:opened', 'like:updated', 'comment:created',
-      'comment:deleted', 'notification', 'settings:updated', 'error',
+      'drop:created', 'drop:updated', 'drop:deleted', 'like:updated', 'comment:created',
+      'comment:updated', 'comment:deleted', 'notification', 'error',
     ];
     for (const type of types) expect(text, type).toContain('`' + type + '`');
   });
@@ -308,7 +296,6 @@ describe('présence simulée', () => {
     expect(stats.connections).toBe(1);
     expect(stats.byUser.map((u: any) => u.user.username)).toEqual(['demo']);
     expect(stats.simulated.online.map((u: any) => u.username)).not.toContain('demo');
-    expect((await server.api.get('/admin/settings').set(ADMIN)).body.simulator.presence).toBe(true);
 
     const joined = await a.client.waitFor((m) => m.type === 'presence:drop' && ids(m as any).length >= 2);
     expect(joined.data.dropId).toBe(drop.id);
@@ -341,9 +328,9 @@ describe('présence simulée', () => {
 
   it('presence: false ne fait venir personne, et arrêter le simulateur retire les simulés', async () => {
     server = await startServer({}, { presenceDebounceMs: 20 }, { presenceTiming: timing });
-    await server.api.post('/admin/simulator').set(ADMIN).send({ enabled: true, presence: false });
+    const off = await server.api.post('/admin/simulator').set(ADMIN).send({ enabled: true, presence: false });
     expect((await server.api.get('/admin/realtime').set(ADMIN)).body.simulated.online).toEqual([]);
-    expect((await server.api.get('/admin/settings').set(ADMIN)).body.simulator.presence).toBe(false);
+    expect(off.body.presence).toBe(false);
     await server.api.post('/admin/simulator').set(ADMIN).send({ enabled: true });
     expect((await server.api.get('/admin/realtime').set(ADMIN)).body.simulated.online).toHaveLength(3);
     await server.api.post('/admin/simulator').set(ADMIN).send({ enabled: false });

@@ -137,21 +137,20 @@ describe('jeu de données', () => {
 
 describe('simulateur', () => {
   const counts = (s: TestServer) =>
-    ['drops', 'likes', 'comments', 'opens'].map((t) => (s.db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n);
+    ['drops', 'likes', 'comments'].map((t) => (s.db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n);
 
-  it('un like produit like:updated, un commentaire comment:created, une ouverture drop:opened, une création drop:created', async () => {
+  it('un like produit like:updated, un commentaire comment:created, une création drop:created', async () => {
     server = await startServer();
     const seen: string[] = [];
-    const offs = (['like:updated', 'comment:created', 'drop:opened', 'drop:created'] as const).map((name) =>
+    const offs = (['like:updated', 'comment:created', 'drop:created'] as const).map((name) =>
       events.on(name, (_payload, source) => source === server!.db && seen.push(name)),
     );
     const sim = simulatorOf(server);
     expect(sim.runOnce('like')).toMatch(/^(un)?like:\d+$/);
     expect(sim.runOnce('comment')).toMatch(/^comment:\d+$/);
-    expect(sim.runOnce('open')).toMatch(/^open:\d+$/);
     expect(sim.runOnce('create')).toMatch(/^create:\d+$/);
     offs.forEach((off) => off());
-    expect(seen).toEqual(['like:updated', 'comment:created', 'drop:opened', 'drop:created']);
+    expect(seen).toEqual(['like:updated', 'comment:created', 'drop:created']);
   });
 
   it('les événements arrivent sur le WebSocket', async () => {
@@ -205,35 +204,7 @@ describe('simulateur', () => {
     expect(created).toEqual({ n: 1 });
     expect(server.db.prepare('SELECT COUNT(*) AS n FROM comments WHERE drop_id = ?').get(mine.id)).toEqual({ n: 0 });
     const likes = server.db.prepare('SELECT COUNT(*) AS n FROM likes WHERE drop_id = ?').get(mine.id) as { n: number };
-    const opens = server.db.prepare('SELECT COUNT(*) AS n FROM opens WHERE drop_id = ?').get(mine.id) as { n: number };
-    expect(likes.n + opens.n).toBeGreaterThan(0);
-  });
-
-  it('respecte le verrouillage : seulement sur ses propres drops ou ceux qu’il a ouverts', async () => {
-    server = await startServer();
-    await server.api.patch('/admin/settings').set(ADMIN).send({ lockMode: 'on' });
-    const sim = simulatorOf(server);
-    const known = (table: string, columns: string) =>
-      new Set((server!.db.prepare(`SELECT ${columns} AS k FROM ${table}`).all() as { k: string }[]).map((r) => r.k));
-    const likesBefore = known('likes', "drop_id || ':' || user_id");
-    const commentsBefore = known('comments', 'CAST(id AS TEXT)');
-    for (let i = 0; i < 60; i++) sim.runOnce(i % 2 ? 'comment' : 'like');
-    const unlockedFor = (dropId: number, userId: number) => {
-      const drop = server!.db.prepare('SELECT author_id FROM drops WHERE id = ?').get(dropId) as { author_id: number };
-      const opened = server!.db.prepare('SELECT 1 FROM opens WHERE drop_id = ? AND user_id = ?').get(dropId, userId);
-      return drop.author_id === userId || opened !== undefined;
-    };
-    const newLikes = server.db.prepare('SELECT drop_id, user_id FROM likes').all() as { drop_id: number; user_id: number }[];
-    for (const l of newLikes) {
-      if (likesBefore.has(`${l.drop_id}:${l.user_id}`)) continue;
-      expect(unlockedFor(l.drop_id, l.user_id)).toBe(true);
-    }
-    const newComments = server.db.prepare('SELECT id, drop_id, author_id FROM comments').all() as { id: number; drop_id: number; author_id: number }[];
-    for (const c of newComments) {
-      if (commentsBefore.has(String(c.id))) continue;
-      expect(unlockedFor(c.drop_id, c.author_id)).toBe(true);
-    }
-    expect(sim.runOnce('open')).toMatch(/^open:/);
+    expect(likes.n).toBeGreaterThan(0);
   });
 
   it('le reset efface ce qu’il a créé', async () => {
@@ -247,10 +218,8 @@ describe('simulateur', () => {
       for (let i = 0; i < 10; i++) sim.runOnce();
       const reset = await server.api.post('/admin/reset').set(ADMIN).send({ confirm: 'RESET', mode });
       expect(reset.status).toBe(200);
-      expect(counts(server)[3]).toBe(0);
       expect(counts(server)[0]).toBe(9);
       expect(server.db.prepare('SELECT COUNT(*) AS n FROM drops WHERE is_seed = 0').get()).toEqual({ n: 0 });
-      expect(server.db.prepare('SELECT COUNT(*) AS n FROM opens').get()).toEqual({ n: 0 });
     }
   });
 
@@ -261,7 +230,6 @@ describe('simulateur', () => {
     const off = events.on('like:updated', (_p, source) => source === server!.db && seen());
     const start = await server.api.post('/admin/simulator').set(ADMIN).send({ enabled: true, intervalSeconds: 1 });
     expect(start.body).toEqual({ enabled: true, intervalSeconds: 1, presence: true });
-    expect((await server.api.get('/admin/settings').set(ADMIN)).body.simulator).toEqual({ enabled: true, intervalSeconds: 1, presence: true });
     const baseline = counts(server).join();
     await vi.waitFor(() => expect(counts(server!).join()).not.toBe(baseline), { timeout: 4000 });
     const stop = await server.api.post('/admin/simulator').set(ADMIN).send({ enabled: false });
@@ -287,26 +255,22 @@ describe('simulateur', () => {
 });
 
 describe('smoke:block2', () => {
-  it('passe contre une instance locale et restaure les réglages', async () => {
+  it('passe contre une instance locale et supprime ses drops', async () => {
     server = await startServer();
     const lines: string[] = [];
-    const before = (await server.api.get('/admin/settings').set(ADMIN)).body;
     const ok = await runSmokeBlock2(`http://127.0.0.1:${server.port}`, 'teacher-key', (l) => lines.push(l));
     expect(lines.join('\n')).not.toContain('❌');
     expect(lines.some((l) => l.startsWith('⚠️'))).toBe(true);
-    expect(lines.filter((l) => l.startsWith('✅'))).toHaveLength(9);
+    expect(lines.filter((l) => l.startsWith('✅'))).toHaveLength(7);
     expect(ok).toBe(true);
-    expect((await server.api.get('/admin/settings').set(ADMIN)).body).toEqual(before);
     expect(server.db.prepare('SELECT COUNT(*) AS n FROM drops').get()).toEqual({ n: 60 });
   }, 30000);
 
-  it('ne dit rien de grave avec une URL de staging et restaure aussi un lockMode initial à on', async () => {
+  it('ne dit rien de grave avec une URL de staging terminée par une barre oblique', async () => {
     server = await startServer();
-    await server.api.patch('/admin/settings').set(ADMIN).send({ lockMode: 'on' });
     const lines: string[] = [];
     const ok = await runSmokeBlock2(`http://127.0.0.1:${server.port}/`, 'teacher-key', (l) => lines.push(l));
     expect(ok).toBe(true);
-    expect((await server.api.get('/admin/settings').set(ADMIN)).body).toMatchObject({ lockMode: 'on' });
     await login(server, 'demo');
   }, 30000);
 });

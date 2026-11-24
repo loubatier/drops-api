@@ -6,7 +6,6 @@ import swaggerUiDist from 'swagger-ui-dist';
 import type { Config } from './config.js';
 import { buildContract } from './contract.js';
 import { type RealtimeOptions, createRealtime } from './realtime/hub.js';
-import { createSettings } from './settings.js';
 import { type SimulatorOptions, createSimulator } from './simulator.js';
 import { realtimeRoutes } from './modules/realtime/routes.js';
 import type { Db } from './db/index.js';
@@ -21,7 +20,6 @@ import { authRoutes } from './modules/auth/routes.js';
 import { adminRoutes } from './modules/admin/routes.js';
 import { commentReadRoutes, commentWriteRoutes } from './modules/comments/routes.js';
 import { datasetRoutes } from './modules/dataset/routes.js';
-import { dropGeoRoutes } from './modules/drops/open.js';
 import { dropReadRoutes, dropWriteRoutes } from './modules/drops/routes.js';
 import { likeRoutes } from './modules/likes/routes.js';
 import { reportRoutes } from './modules/reports/routes.js';
@@ -73,9 +71,8 @@ export function createApp({ config, db, options = {} }: AppDeps) {
   app.use(simulation(config));
   app.use(identify(config, db));
 
-  const settings = createSettings(db, config);
-  const realtime = createRealtime(config, db, settings, options.realtime);
-  const simulator = createSimulator(config, db, settings, { presence: realtime.simulated, ...options.simulator });
+  const realtime = createRealtime(config, db, options.realtime);
+  const simulator = createSimulator(config, db, { presence: realtime.simulated, ...options.simulator });
 
   const routes: AnyRoute[] = [];
   let documentCache: object | null = null;
@@ -94,14 +91,13 @@ export function createApp({ config, db, options = {} }: AppDeps) {
     ...authRoutes(config),
     ...userRoutes(),
     ...dropReadRoutes(config),
-    ...dropWriteRoutes(config),
+    ...dropWriteRoutes(),
     ...likeRoutes(),
     ...commentReadRoutes(),
     ...commentWriteRoutes(),
     ...reportRoutes(),
     ...adminRoutes({ simulator }),
     ...realtimeRoutes(),
-    ...dropGeoRoutes(),
     ...datasetRoutes(),
   );
 
@@ -117,7 +113,7 @@ export function createApp({ config, db, options = {} }: AppDeps) {
   };
 
   app.use('/dataset/points', compression());
-  const deps = { config, db, settings, realtime, pre };
+  const deps = { config, db, realtime, pre };
   const router = express.Router();
   mountRoutes(router, routes, deps);
   app.use('/docs/assets', express.static(swaggerUiDist.getAbsoluteFSPath(), { index: false }));
@@ -138,7 +134,6 @@ export function createApp({ config, db, options = {} }: AppDeps) {
   app.locals.apiRouter = router;
   app.locals.routes = routes;
   app.locals.realtime = realtime;
-  app.locals.settings = settings;
   app.locals.simulator = simulator;
 
   app.use(notFoundHandler);
